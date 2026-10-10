@@ -12,5 +12,5 @@ package app.vela.core.data
  * pushed down here, because `:core` never reads an app holder.
  */
 object NoGoogle {
-    @Volatile var enabled: Boolean = false
+    @Volatile var enabled: Boolean = true
 }

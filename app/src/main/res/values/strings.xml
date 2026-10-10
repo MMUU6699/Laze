@@ -1527,4 +1527,18 @@
     <string name="onboarding_voice_ready_desc">Voice navigation is ready and powered by your system speech engine.</string>
     <string name="onboarding_voice_setup_needed">Arabic Voice Setup Needed</string>
     <string name="onboarding_voice_setup_desc">To hear Arabic turn-by-turn directions, install Arabic voice data in your device speech settings.</string>
+    <string name="map_layers_sheet_title">Map</string>
+    <string name="map_type_title">Map Type</string>
+    <string name="map_type_default">Default</string>
+    <string name="map_type_satellite">Satellite</string>
+    <string name="map_type_terrain">Terrain</string>
+    <string name="map_details_title">Map Details</string>
+    <string name="map_detail_traffic">Traffic</string>
+    <string name="map_detail_traffic_subtitle">Colors show traffic congestion on roads</string>
+    <string name="map_detail_reports">Community Reports</string>
+    <string name="map_detail_reports_subtitle">Accidents and road closures reported by drivers</string>
+    <string name="map_detail_buildings">3D Buildings</string>
+    <string name="map_detail_buildings_subtitle">Three-dimensional building models</string>
+    <string name="map_detail_places">Place Icons</string>
+    <string name="map_detail_places_subtitle">Show points of interest and services on the map</string>
 </resources>

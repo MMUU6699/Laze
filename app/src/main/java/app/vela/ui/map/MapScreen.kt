@@ -2620,9 +2620,12 @@ fun MapScreen(
                 (!resultsShown || landscapeChrome) &&
                 clearOfPlaceSheet
             ) {
-                val ctx = androidx.compose.ui.platform.LocalContext.current
-                val anyLayerOn = app.vela.ui.SatelliteLayer.on.value || Traffic.on.value ||
-                    app.vela.ui.TransitLayer.on.value || app.vela.ui.Topography.on.value
+                val isNonDefaultLayer = app.vela.ui.SatelliteLayer.on.value ||
+                    app.vela.ui.Topography.on.value ||
+                    Traffic.on.value ||
+                    !app.vela.ui.ReportsLayer.on.value ||
+                    !app.vela.ui.Buildings3d.on.value ||
+                    !app.vela.ui.MapPoiPrefs.showPois.value
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -2641,52 +2644,28 @@ fun MapScreen(
                             Icon(
                                 SymOutlined.Layers,
                                 contentDescription = stringResource(R.string.map_layers),
-                                tint = if (anyLayerOn) MaterialTheme.colorScheme.primary
+                                tint = if (isNonDefaultLayer) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(2.dp),
                             )
                         }
                     }
-                    // The layers panel, Google-style: SATELLITE swaps the base look, the rest are
-                    // overlays. Same holders Settings flips, so the two stay in sync. VelaMenu, not
-                    // a bare DropdownMenu - the D-pad rule (docs/dpad.md): a Popup can't be
-                    // pre-focused, so key-first devices get the auto-focusing chooser dialog.
-                    app.vela.ui.VelaMenu(
-                        expanded = layersOpen,
-                        onDismissRequest = { layersOpen = false },
-                    ) {
-                        toggleItem(stringResource(R.string.map_satellite_toggle), app.vela.ui.SatelliteLayer.on.value) {
-                            app.vela.ui.SatelliteLayer.set(ctx, it)
-                            vm.onSatelliteToggled()
-                        }
-                        toggleItem(stringResource(R.string.settings_live_traffic), Traffic.on.value) {
-                            Traffic.set(ctx, it)
-                        }
-                        toggleItem(stringResource(R.string.settings_transit_layer), app.vela.ui.TransitLayer.on.value) {
-                            app.vela.ui.TransitLayer.set(ctx, it)
-                        }
-                        toggleItem(stringResource(R.string.settings_topography), app.vela.ui.Topography.on.value) {
-                            app.vela.ui.Topography.set(ctx, it)
-                        }
-                        // Where the map's places come from, and the Google-free switch, one tap from
-                        // the map (issue #626): the same holders Settings > Places and Privacy flip.
-                        // The places choice only changes the map's pins; search still asks Google
-                        // unless Google-free is on, which is why that switch sits here too.
-                        listOf(
-                            app.vela.ui.MapPoiPrefs.SOURCE_OPEN to R.string.settings_places_source_open,
-                            app.vela.ui.MapPoiPrefs.SOURCE_GOOGLE to R.string.settings_places_source_google,
-                            app.vela.ui.MapPoiPrefs.SOURCE_BOTH to R.string.settings_places_source_both,
-                        ).forEach { (id, label) ->
-                            val picked = app.vela.ui.MapPoiPrefs.placesSource.value == id
-                            item(
-                                stringResource(R.string.map_layers_places, stringResource(label)),
-                                if (picked) Sym.RadioButtonChecked else Sym.RadioButtonUnchecked,
-                            ) { app.vela.ui.MapPoiPrefs.setPlacesSource(ctx, id) }
-                        }
-                        toggleItem(stringResource(R.string.settings_google_free), app.vela.ui.GoogleFree.on.value) {
-                            app.vela.ui.GoogleFree.set(ctx, it)
-                        }
+                    if (isNonDefaultLayer) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(top = 2.dp, end = 2.dp)
+                                .size(9.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                        )
                     }
+                }
+                if (layersOpen) {
+                    LayersBottomSheet(
+                        onDismiss = { layersOpen = false },
+                        onSatelliteToggled = vm::onSatelliteToggled,
+                    )
                 }
             }
 

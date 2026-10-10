@@ -4170,7 +4170,7 @@ fun VelaMapView(
                         }
                     }
                     // Laze Road Reports tap detection
-                    if (map.style?.getLayer(ROAD_REPORTS_LAYER) != null) {
+                    if (app.vela.ui.ReportsLayer.on.value && map.style?.getLayer(ROAD_REPORTS_LAYER) != null) {
                         val hitReport = map.queryRenderedFeatures(box, ROAD_REPORTS_LAYER).firstOrNull()
                         if (hitReport != null) {
                             val repId = hitReport.getStringProperty("id")
@@ -9579,7 +9579,7 @@ private fun applyData(
     if (route !== lastAppliedRouteLine && lastAppliedRouteLine?.let { it.size == route.size && it == route } == true) {
         lastAppliedRouteLine = route
     }
-    val activeReports = app.vela.ui.reports.LazeReportOverlay.activeReports.value
+    val activeReports = if (app.vela.ui.ReportsLayer.on.value) app.vela.ui.reports.LazeReportOverlay.activeReports.value else emptyList()
     if (activeReports !== lastAppliedRoadReports) {
         lastAppliedRoadReports = activeReports
         val reportFeatures = activeReports.map { r ->

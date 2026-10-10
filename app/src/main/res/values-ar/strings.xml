@@ -1482,4 +1482,18 @@
     <string name="onboarding_voice_ready_desc">التوجيه الصوتي جاهز للاستخدام ومربوط بمحرك الصوت في هاتفك.</string>
     <string name="onboarding_voice_setup_needed">تثبيت الصوت العربي</string>
     <string name="onboarding_voice_setup_desc">لسماع إرشادات الطرق والتنبيهات بالعربية، يرجى تثبيت حزمة الصوت العربي من إعدادات تحويل النص إلى كلام.</string>
+    <string name="map_layers_sheet_title">الخريطة</string>
+    <string name="map_type_title">نوع الخريطة</string>
+    <string name="map_type_default">افتراضية</string>
+    <string name="map_type_satellite">قمر صناعي</string>
+    <string name="map_type_terrain">تضاريس</string>
+    <string name="map_details_title">تفاصيل الخريطة</string>
+    <string name="map_detail_traffic">حركة المرور</string>
+    <string name="map_detail_traffic_subtitle">ألوان الازدحام على الطرق</string>
+    <string name="map_detail_reports">البلاغات</string>
+    <string name="map_detail_reports_subtitle">حوادث وإغلاقات يبلّغ عنها السائقون</string>
+    <string name="map_detail_buildings">المباني ثلاثية الأبعاد</string>
+    <string name="map_detail_buildings_subtitle">مجسمات المباني بالأبعاد الثلاثية</string>
+    <string name="map_detail_places">أسماء الأماكن</string>
+    <string name="map_detail_places_subtitle">إظهار أيقونات المعالم والخدمات على الخريطة</string>
 </resources>
