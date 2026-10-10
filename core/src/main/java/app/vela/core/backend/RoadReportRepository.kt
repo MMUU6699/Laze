@@ -6,15 +6,32 @@ import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.rpc
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.io.File
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+
+sealed class ReportSubmitResult {
+    data class SentOnline(val report: RoadReport) : ReportSubmitResult()
+    data class SavedOffline(val report: RoadReport) : ReportSubmitResult()
+    data class Error(val message: String) : ReportSubmitResult()
+}
+
+@Serializable
+data class OutboxReport(
+    val report: RoadReport,
+    val queuedAtTimestampMs: Long = System.currentTimeMillis()
+)
 
 @Serializable
 private data class NearbyRpcParams(
@@ -31,7 +48,8 @@ private data class ConfirmRpcParams(
 )
 
 /**
- * Manages community road reports, spatial querying, confirmations, and in-memory caching.
+ * Manages community road reports, spatial querying, confirmations, local in-memory caching,
+ * and an offline Outbox queue with automatic resubmission and 30-minute expiration pruning.
  */
 class RoadReportRepository(
     private val context: Context? = null,
@@ -40,6 +58,15 @@ class RoadReportRepository(
     private val scope = CoroutineScope(Dispatchers.IO)
     private val _reports = MutableStateFlow<List<RoadReport>>(emptyList())
     val reports: StateFlow<List<RoadReport>> = _reports.asStateFlow()
+
+    private val _outbox = MutableStateFlow<List<OutboxReport>>(emptyList())
+    val outbox: StateFlow<List<OutboxReport>> = _outbox.asStateFlow()
+
+    private val json = Json { ignoreUnknownKeys = true; prettyPrint = false }
+
+    private val outboxFile: File? by lazy {
+        context?.let { File(it.filesDir, "laze_reports_outbox.json") }
+    }
 
     private val deviceId: String by lazy {
         val prefs = context?.getSharedPreferences("laze_device_prefs", Context.MODE_PRIVATE)
@@ -51,12 +78,110 @@ class RoadReportRepository(
         id
     }
 
+    init {
+        loadOutbox()
+        startPeriodicOutboxFlusher()
+    }
+
+    private fun loadOutbox() {
+        val file = outboxFile ?: return
+        if (file.exists()) {
+            try {
+                val text = file.readText()
+                if (text.isNotBlank()) {
+                    val loaded = json.decodeFromString<List<OutboxReport>>(text)
+                    _outbox.value = pruneExpiredOutbox(loaded)
+                }
+            } catch (_: Exception) {
+                // If corrupt, leave empty
+            }
+        }
+    }
+
+    @Synchronized
+    private fun persistOutbox(items: List<OutboxReport>) {
+        _outbox.value = items
+        val file = outboxFile ?: return
+        try {
+            val temp = File(file.parentFile, "${file.name}.tmp")
+            temp.writeText(json.encodeToString(items))
+            if (temp.exists()) {
+                temp.renameTo(file)
+            }
+        } catch (_: Exception) {
+            // Best effort
+        }
+    }
+
+    private fun pruneExpiredOutbox(items: List<OutboxReport>): List<OutboxReport> {
+        val now = System.currentTimeMillis()
+        val maxAgeMs = 30 * 60 * 1000L // 30 minutes expiration
+        return items.filter { (now - it.queuedAtTimestampMs) <= maxAgeMs }
+    }
+
+    private fun startPeriodicOutboxFlusher() {
+        scope.launch {
+            while (isActive) {
+                delay(30_000L) // Flush check every 30 seconds
+                try {
+                    flushOutbox()
+                } catch (_: Exception) {
+                    // Periodic background loop should not terminate
+                }
+            }
+        }
+    }
+
+    /**
+     * Flushes queued outbox reports to Supabase. Prunes any reports older than 30 minutes.
+     * Returns the count of successfully transmitted reports.
+     */
+    suspend fun flushOutbox(): Int = withContext(Dispatchers.IO) {
+        val currentItems = pruneExpiredOutbox(_outbox.value)
+        if (currentItems.size != _outbox.value.size) {
+            persistOutbox(currentItems)
+        }
+
+        val client = SupabaseManager.getClient() ?: return@withContext 0
+        if (currentItems.isEmpty()) {
+            return@withContext 0
+        }
+
+        var transmitted = 0
+        val remaining = mutableListOf<OutboxReport>()
+
+        for (item in currentItems) {
+            try {
+                client.from("road_reports").insert(item.report)
+                transmitted++
+            } catch (_: Exception) {
+                // Network still unreachable or server error, retain for next cycle
+                remaining.add(item)
+            }
+        }
+
+        persistOutbox(remaining)
+        transmitted
+    }
+
     internal fun setReportsForTesting(testReports: List<RoadReport>) {
         _reports.value = testReports
     }
 
+    internal fun getOutboxItemsForTesting(): List<OutboxReport> {
+        return _outbox.value
+    }
+
+    internal fun addOutboxItemForTesting(item: OutboxReport) {
+        val current = _outbox.value.toMutableList()
+        current.add(item)
+        persistOutbox(current)
+    }
+
     /**
-     * Submit a new road report (works both online with Supabase and offline with local cache).
+     * Submit a new road report.
+     * When online, transmits directly to Supabase and returns [ReportSubmitResult.SentOnline].
+     * When offline or upon network failure, queues to persistent Outbox and returns [ReportSubmitResult.SavedOffline].
      */
     suspend fun submitReport(
         type: RoadReportType,
@@ -66,7 +191,7 @@ class RoadReportRepository(
         severity: RoadReportSeverity = RoadReportSeverity.MODERATE,
         description: String? = null,
         roadName: String? = null
-    ): Result<RoadReport> = withContext(Dispatchers.IO) {
+    ): ReportSubmitResult = withContext(Dispatchers.IO) {
         try {
             val now = Instant.now()
             val expirationMinutes = when (type) {
@@ -102,7 +227,7 @@ class RoadReportRepository(
                 expiresAt = expiresAt
             )
 
-            // Optimistically update local state
+            // Optimistically update local active reports list for immediate map rendering
             val currentList = _reports.value.toMutableList()
             currentList.add(0, report)
             _reports.value = currentList
@@ -110,20 +235,28 @@ class RoadReportRepository(
             // Increment report submission in user profile
             authRepository?.incrementReportsCount()
 
-            // If Supabase is available, sync to remote database
+            // Transmit to Supabase if available
             val client = SupabaseManager.getClient()
             if (client != null) {
                 try {
                     client.from("road_reports").insert(report)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    // Still return success because optimistic update succeeded locally
+                    return@withContext ReportSubmitResult.SentOnline(report)
+                } catch (_: Exception) {
+                    // Network or server error: queue in outbox for background retry
+                    val updatedOutbox = _outbox.value.toMutableList()
+                    updatedOutbox.add(OutboxReport(report, System.currentTimeMillis()))
+                    persistOutbox(updatedOutbox)
+                    return@withContext ReportSubmitResult.SavedOffline(report)
                 }
+            } else {
+                // Client not configured or offline: queue in outbox
+                val updatedOutbox = _outbox.value.toMutableList()
+                updatedOutbox.add(OutboxReport(report, System.currentTimeMillis()))
+                persistOutbox(updatedOutbox)
+                return@withContext ReportSubmitResult.SavedOffline(report)
             }
-
-            Result.success(report)
         } catch (e: Exception) {
-            Result.failure(e)
+            ReportSubmitResult.Error(e.localizedMessage ?: "فشل إنشاء البلاغ")
         }
     }
 
@@ -146,10 +279,9 @@ class RoadReportRepository(
                         "get_nearby_road_reports",
                         NearbyRpcParams(centerLat, centerLng, radiusMeters)
                     ).decodeList<RoadReport>()
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     // 2. Fallback to bounding box SELECT query
                     try {
-                        // 1 deg lat ~= 111 km
                         val deltaLat = (radiusMeters / 111000.0) * 1.2
                         val deltaLng = deltaLat / Math.cos(Math.toRadians(centerLat)).coerceAtLeast(0.01)
 
@@ -169,8 +301,8 @@ class RoadReportRepository(
                                 }
                             }
                             .decodeList<RoadReport>()
-                    } catch (e2: Exception) {
-                        e2.printStackTrace()
+                    } catch (_: Exception) {
+                        // Offline or network error
                     }
                 }
             }
@@ -238,8 +370,8 @@ class RoadReportRepository(
                             p_device_id = deviceId
                         )
                     )
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                } catch (_: Exception) {
+                    // Offline ignore
                 }
             }
 

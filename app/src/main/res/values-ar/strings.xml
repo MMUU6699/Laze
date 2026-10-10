@@ -1377,6 +1377,7 @@
     <string name="report_action_still_there">لا يزال موجوداً</string>
     <string name="report_action_cleared">تمت إزالته</string>
     <string name="report_submitted_success">تم إرسال البلاغ بنجاح! شكراً لمساعدتك السائقين.</string>
+    <string name="report_submitted_offline">تم حفظ البلاغ محلياً وسيُرسل عند توفر الاتصال.</string>
     <string name="report_submitted_error">تعذر إرسال البلاغ. يرجى المحاولة مرة أخرى.</string>
     <string name="report_confirmed_thanks">شكراً لتأكيدك البلاغ وتحديث الخريطة!</string>
     <string name="report_cleared_thanks">شكراً لتحديثك حالة الطريق!</string>

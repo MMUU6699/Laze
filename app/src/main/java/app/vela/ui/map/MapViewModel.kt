@@ -1378,6 +1378,7 @@ class MapViewModel @Inject constructor(
     ) {
         val loc = _state.value.myLocation ?: _state.value.center ?: return
         viewModelScope.launch {
+            closeReportSheet()
             val res = roadReportRepository.submitReport(
                 type = type,
                 latitude = loc.lat,
@@ -1387,11 +1388,16 @@ class MapViewModel @Inject constructor(
                 description = description,
                 roadName = null
             )
-            res.onSuccess {
-                closeReportSheet()
-                flashStatus(appContext.getString(R.string.report_submitted_success), 4000L)
-            }.onFailure {
-                flashStatus(appContext.getString(R.string.report_submitted_error), 4000L)
+            when (res) {
+                is app.vela.core.backend.ReportSubmitResult.SentOnline -> {
+                    flashStatus(appContext.getString(R.string.report_submitted_success), 4000L)
+                }
+                is app.vela.core.backend.ReportSubmitResult.SavedOffline -> {
+                    flashStatus(appContext.getString(R.string.report_submitted_offline), 4000L)
+                }
+                is app.vela.core.backend.ReportSubmitResult.Error -> {
+                    flashStatus(appContext.getString(R.string.report_submitted_error), 4000L)
+                }
             }
         }
     }

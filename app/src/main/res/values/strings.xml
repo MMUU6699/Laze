@@ -1490,6 +1490,7 @@
     <string name="report_action_still_there">Still there</string>
     <string name="report_action_cleared">Cleared</string>
     <string name="report_submitted_success">Report submitted! Thank you for helping drivers.</string>
+    <string name="report_submitted_offline">Report saved locally and will be sent when connection is restored.</string>
     <string name="report_submitted_error">Failed to submit report. Please try again.</string>
     <string name="report_confirmed_thanks">Thanks for confirming!</string>
     <string name="report_cleared_thanks">Thanks for updating the status!</string>
