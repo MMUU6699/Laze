@@ -85,6 +85,41 @@ object CoreModule {
         authRepository: app.vela.core.backend.AuthRepository
     ): app.vela.core.backend.RoadReportRepository =
         app.vela.core.backend.RoadReportRepository(context, authRepository)
+
+    @Provides
+    @Singleton
+    fun routingProvider(
+        okHttpClient: OkHttpClient,
+    ): app.vela.core.routing.RoutingProvider {
+        val providers = mutableListOf<app.vela.core.routing.RoutingProvider>()
+        if (app.vela.core.BuildConfig.MAPBOX_TOKEN.isNotBlank()) {
+            providers.add(app.vela.core.routing.MapboxRoutingProvider(okHttpClient))
+        }
+        if (app.vela.core.BuildConfig.IRAQ_OSRM_URL.isNotBlank()) {
+            providers.add(app.vela.core.routing.OsrmRoutingProvider(okHttpClient, baseUrl = app.vela.core.BuildConfig.IRAQ_OSRM_URL, name = "OSRM-Iraq"))
+        }
+        providers.add(app.vela.core.routing.OsrmRoutingProvider(okHttpClient, baseUrl = "https://routing.openstreetmap.de", name = "OSRM-Community"))
+        return app.vela.core.routing.CompositeRoutingProvider(providers)
+    }
+
+    @Provides
+    @Singleton
+    fun geocodingProvider(
+        okHttpClient: OkHttpClient,
+    ): app.vela.core.geocoding.GeocodingProvider {
+        val providers = mutableListOf<app.vela.core.geocoding.GeocodingProvider>()
+        if (app.vela.core.BuildConfig.IRAQ_PHOTON_URL.isNotBlank()) {
+            providers.add(app.vela.core.geocoding.PhotonGeocodingProvider(okHttpClient, baseUrl = app.vela.core.BuildConfig.IRAQ_PHOTON_URL, name = "Photon-Iraq"))
+        }
+        providers.add(app.vela.core.geocoding.PhotonGeocodingProvider(okHttpClient, name = "Photon-Community"))
+        providers.add(app.vela.core.geocoding.NominatimGeocodingProvider(okHttpClient))
+        return app.vela.core.geocoding.CompositeGeocodingProvider(providers)
+    }
+
+    @Provides
+    @Singleton
+    fun tileProvider(): app.vela.core.tiles.TileProvider =
+        app.vela.core.tiles.DynamicTileProvider(app.vela.core.tiles.OpenFreeMapTileProvider())
 }
 
 /** A cookie jar the app can empty (Settings > Privacy "Start a new Google session"). */

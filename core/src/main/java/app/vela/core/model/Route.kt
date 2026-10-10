@@ -163,6 +163,8 @@ data class TrafficSpan(
 enum class RouteSource {
     /** The open router's own route (FOSSGIS OSRM), full turn-by-turn. */
     OSRM,
+    /** Mapbox Directions API route with Arabic guidance. */
+    MAPBOX,
     /** OSRM driven through vias sampled from a Google polyline: Google's path, OSRM's steps. */
     OSRM_VIA_SNAP,
     /** Google's keyless directions with their own steps; long trips can carry abbreviated ones. */

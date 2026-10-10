@@ -149,7 +149,25 @@ class GoogleMapsDataSource @Inject constructor(
     private val jsTransforms: JsTransforms,
     private val diag: DiagLog,
     private val routeEngine: RouteEngine,
+    routingProvider: app.vela.core.routing.RoutingProvider? = null,
+    geocodingProvider: app.vela.core.geocoding.GeocodingProvider? = null,
 ) : MapDataSource {
+
+    private val activeRoutingProvider: app.vela.core.routing.RoutingProvider = routingProvider ?: app.vela.core.routing.CompositeRoutingProvider(
+        listOfNotNull(
+            if (app.vela.core.BuildConfig.MAPBOX_TOKEN.isNotBlank()) app.vela.core.routing.MapboxRoutingProvider(http) else null,
+            if (app.vela.core.BuildConfig.IRAQ_OSRM_URL.isNotBlank()) app.vela.core.routing.OsrmRoutingProvider(http, baseUrl = app.vela.core.BuildConfig.IRAQ_OSRM_URL, name = "OSRM-Iraq") else null,
+            app.vela.core.routing.OsrmRoutingProvider(http, baseUrl = "https://routing.openstreetmap.de", name = "OSRM-Community")
+        )
+    )
+
+    private val activeGeocodingProvider: app.vela.core.geocoding.GeocodingProvider = geocodingProvider ?: app.vela.core.geocoding.CompositeGeocodingProvider(
+        listOfNotNull(
+            if (app.vela.core.BuildConfig.IRAQ_PHOTON_URL.isNotBlank()) app.vela.core.geocoding.PhotonGeocodingProvider(http, baseUrl = app.vela.core.BuildConfig.IRAQ_PHOTON_URL, name = "Photon-Iraq") else null,
+            app.vela.core.geocoding.PhotonGeocodingProvider(http, name = "Photon-Community"),
+            app.vela.core.geocoding.NominatimGeocodingProvider(http)
+        )
+    )
 
     /** ISO 3166 alpha-2 of the region the phone is in (cell-network country, falling back to the
      *  locale's) — set by the app layer at startup; drives the `gl=` rewrite in [regionalized]. */
@@ -226,7 +244,10 @@ class GoogleMapsDataSource @Inject constructor(
                 val n = async(Dispatchers.IO) { app.vela.core.data.PhotonGeocoder.suggest(http, query, bias, lang, limit = 10) }
                 r.await() to n.await()
             }
-            val places = (ranked + nearby).distinctBy { it.id }
+            val initialPlaces = (ranked + nearby).distinctBy { it.id }
+            val places = if (initialPlaces.isNotEmpty()) initialPlaces else {
+                activeGeocodingProvider.search(query, bias, lang = lang ?: "ar", limit = 15)
+            }
             return@io SearchResult(query, places)
         }
         session.ensure()
@@ -867,8 +888,21 @@ class GoogleMapsDataSource @Inject constructor(
         if (waypoints.isNotEmpty()) {
             return@io coroutineScope {
                 val phoneFirst = urgent && routeEngine.isReady(mode) && routeEngine.covers(origin, destination, mode)
-                val viaCall = {
-                    RouteGeometry.routeVia(
+                val viaCall: suspend () -> List<Route> = {
+                    val r = runCatching {
+                        activeRoutingProvider.route(
+                            origin = origin,
+                            destination = destination,
+                            mode = mode,
+                            waypoints = waypoints,
+                            avoidTolls = avoidTolls,
+                            avoidHighways = avoidHighways,
+                            avoidFerries = avoidFerries,
+                            departBearingDeg = departBearingDeg,
+                            timeoutMs = osrmTryMs,
+                        )
+                    }.getOrNull().orEmpty()
+                    if (r.isNotEmpty()) r else RouteGeometry.routeVia(
                         routingClient, listOf(origin) + waypoints + destination, mode, avoidTolls, avoidHighways, avoidFerries, departBearingDeg,
                         tries = tries, callTimeoutMs = osrmTryMs, budget = osrmBudget, onFailure = onOsrmFail,
                     )
@@ -1037,8 +1071,20 @@ class GoogleMapsDataSource @Inject constructor(
             // Google's keyless directions endpoint hands back ABBREVIATED steps for longer routes
             // (a 6-mi route came back with 2 of ~10 turns), so Google is only the FALLBACK + the
             // live-traffic source. Fetch both in parallel so the traffic round-trip is free.
-            val openCall = {
-                RouteGeometry.route(
+            val openCall: suspend () -> List<Route> = {
+                val r = runCatching {
+                    activeRoutingProvider.route(
+                        origin = origin,
+                        destination = destination,
+                        mode = mode,
+                        avoidTolls = avoidTolls,
+                        avoidHighways = avoidHighways,
+                        avoidFerries = avoidFerries,
+                        departBearingDeg = departBearingDeg,
+                        timeoutMs = osrmTryMs,
+                    )
+                }.getOrNull().orEmpty()
+                if (r.isNotEmpty()) r else RouteGeometry.route(
                     routingClient, origin, destination, mode, avoidTolls, avoidHighways, avoidFerries, tries, departBearingDeg,
                     callTimeoutMs = osrmTryMs, budget = osrmBudget, onFailure = onOsrmFail,
                 )
@@ -1647,7 +1693,10 @@ class GoogleMapsDataSource @Inject constructor(
         onOsrmFail: (String) -> Unit, urgent: Boolean, routingClient: OkHttpClient = http,
     ): List<Route>? = coroutineScope {
         val openD = async {
-            RouteGeometry.route(routingClient, origin, destination, TravelMode.WALK, tries = tries, callTimeoutMs = osrmTryMs, budget = osrmBudget, onFailure = onOsrmFail)
+            val r = runCatching {
+                activeRoutingProvider.route(origin, destination, TravelMode.WALK, timeoutMs = osrmTryMs)
+            }.getOrNull().orEmpty()
+            if (r.isNotEmpty()) r else RouteGeometry.route(routingClient, origin, destination, TravelMode.WALK, tries = tries, callTimeoutMs = osrmTryMs, budget = osrmBudget, onFailure = onOsrmFail)
         }
         val googleD = async {
             if (urgent || !app.vela.core.data.RoutingPrefs.googleTraffic) emptyList()

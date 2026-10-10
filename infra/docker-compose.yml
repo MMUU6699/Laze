@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # -------------------------------------------------------------------------
+  # 1. OSRM Iraq Routing Engine (Multi-Level Dijkstra algorithm)
+  # Preprocessed from Geofabrik extract: iraq-latest.osm.pbf
+  # -------------------------------------------------------------------------
+  osrm-iraq:
+    image: osrm/osrm-backend:v5.27.1
+    container_name: laze-osrm-iraq
+    restart: unless-stopped
+    volumes:
+      - ./data/osrm:/data
+    command: osrm-routed --algorithm mld /data/iraq-latest.osrm --max-matching-size 500 --max-table-size 1000
+    ports:
+      - "127.0.0.1:5000:5000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/route/v1/driving/44.36,33.31;44.40,33.34?overview=false"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # 2. Photon Geocoder (OpenStreetMap search with Arabic support)
+  # -------------------------------------------------------------------------
+  photon:
+    image: komoot/photon:latest
+    container_name: laze-photon-search
+    restart: unless-stopped
+    volumes:
+      - ./data/photon:/photon/photon_data
+    ports:
+      - "127.0.0.1:2322:2322"
+    environment:
+      - JAVA_OPTS=-Xmx4g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2322/api?q=Baghdad&limit=1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # 3. Vector Tile Server (PMTiles for Iraq)
+  # -------------------------------------------------------------------------
+  tileserver:
+    image: maptiler/tileserver-gl:latest
+    container_name: laze-tileserver
+    restart: unless-stopped
+    volumes:
+      - ./data/tiles:/data
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # -------------------------------------------------------------------------
+  # 4. Nginx Reverse Proxy with Rate Limiting & SSL Termination
+  # -------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: laze-gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - osrm-iraq
+      - photon
+      - tileserver

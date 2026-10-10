@@ -38,8 +38,23 @@ android {
             ?: localProperties.getProperty("supabase.anon_key")
             ?: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3dWJ4ZGRkZmNmZWFucnBweHZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2Mjc1MDMsImV4cCI6MjEwNzIwMzUwM30.EtqWZXyh98FBTw5jdQkf5VC-1NlNAmPllLEw09721_c"
 
+        val mapboxToken = (project.findProperty("mapboxToken") as? String)
+            ?: localProperties.getProperty("mapbox.token")
+            ?: ""
+
+        val iraqOsrmUrl = (project.findProperty("iraqOsrmUrl") as? String)
+            ?: localProperties.getProperty("iraq.osrm.url")
+            ?: ""
+
+        val iraqPhotonUrl = (project.findProperty("iraqPhotonUrl") as? String)
+            ?: localProperties.getProperty("iraq.photon.url")
+            ?: ""
+
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
+        buildConfigField("String", "MAPBOX_TOKEN", "\"$mapboxToken\"")
+        buildConfigField("String", "IRAQ_OSRM_URL", "\"$iraqOsrmUrl\"")
+        buildConfigField("String", "IRAQ_PHOTON_URL", "\"$iraqPhotonUrl\"")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
