@@ -12,8 +12,8 @@ object LazeBackendConfig {
     private const val KEY_SUPABASE_URL = "supabase_url"
     private const val KEY_SUPABASE_KEY = "supabase_key"
 
-    const val DEFAULT_SUPABASE_URL = "https://dwubxdddfcfeanrppxvy.supabase.co"
-    const val DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3dWJ4ZGRkZmNmZWFucnBweHZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2Mjc1MDMsImV4cCI6MjEwNzIwMzUwM30.EtqWZXyh98FBTw5jdQkf5VC-1NlNAmPllLEw09721_c"
+    val DEFAULT_SUPABASE_URL: String = app.vela.core.BuildConfig.SUPABASE_URL
+    val DEFAULT_SUPABASE_KEY: String = app.vela.core.BuildConfig.SUPABASE_ANON_KEY
 
     @Volatile
     private var cachedUrl: String? = null

@@ -1,3 +1,6 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
@@ -13,9 +16,30 @@ android {
         unitTests.isReturnDefaultValues = true
     }
     compileSdk = 37
+    buildFeatures {
+        buildConfig = true
+    }
     defaultConfig {
         minSdk = 26
         consumerProguardFiles("consumer-rules.pro")
+
+        val localProperties = Properties().apply {
+            val file = rootProject.file("local.properties")
+            if (file.exists()) {
+                file.inputStream().use { load(it) }
+            }
+        }
+
+        val supabaseUrl = (project.findProperty("supabaseUrl") as? String)
+            ?: localProperties.getProperty("supabase.url")
+            ?: "https://dwubxdddfcfeanrppxvy.supabase.co"
+
+        val supabaseAnonKey = (project.findProperty("supabaseAnonKey") as? String)
+            ?: localProperties.getProperty("supabase.anon_key")
+            ?: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3dWJ4ZGRkZmNmZWFucnBweHZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2Mjc1MDMsImV4cCI6MjEwNzIwMzUwM30.EtqWZXyh98FBTw5jdQkf5VC-1NlNAmPllLEw09721_c"
+
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnonKey\"")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
