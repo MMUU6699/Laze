@@ -1447,6 +1447,19 @@ class MapViewModel @Inject constructor(
         }
     }
 
+    fun deleteAccount(onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val res = authRepository.deleteAccount()
+            if (res.isSuccess) {
+                flashStatus(appContext.getString(R.string.auth_signed_out_msg), 3000L)
+                onComplete(true)
+            } else {
+                flashStatus(appContext.getString(R.string.report_submitted_error), 4000L)
+                onComplete(false)
+            }
+        }
+    }
+
     /**
      * Puts the map on its start view (Settings > Map, "Where the map opens"). The activity calls
      * this once, after it has handled the launch intent and before the map is composed: the map

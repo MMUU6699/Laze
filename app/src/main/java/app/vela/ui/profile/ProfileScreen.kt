@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -143,18 +144,67 @@ fun ProfileScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    var showDeleteDialog by remember { mutableStateOf(false) }
+
+                    if (showDeleteDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteDialog = false },
+                            title = { Text(stringResource(R.string.profile_delete_account)) },
+                            text = { Text(stringResource(R.string.profile_delete_confirm)) },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        showDeleteDialog = false
+                                        vm.deleteAccount { onBack() }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.error,
+                                        contentColor = MaterialTheme.colorScheme.onError
+                                    )
+                                ) {
+                                    Text(stringResource(R.string.profile_delete_account))
+                                }
+                            },
+                            dismissButton = {
+                                OutlinedButton(onClick = { showDeleteDialog = false }) {
+                                    Text(stringResource(R.string.settings_cancel))
+                                }
+                            }
+                        )
+                    }
 
                     Button(
                         onClick = { vm.signOut() },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(text = stringResource(R.string.auth_sign_out))
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedButton(
+                        onClick = { showDeleteDialog = true },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Sym.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = stringResource(R.string.profile_delete_account))
                     }
                 }
             }

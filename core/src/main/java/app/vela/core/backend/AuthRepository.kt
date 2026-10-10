@@ -3,10 +3,10 @@ package app.vela.core.backend
 import android.content.Context
 import android.net.Uri
 import io.github.jan.supabase.auth.auth
-import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.from
-import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.rpc
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 sealed class AuthState {
     data object Loading : AuthState()
@@ -22,8 +24,73 @@ sealed class AuthState {
     data class Error(val message: String) : AuthState()
 }
 
+internal data class AuthCallbackTokens(
+    val accessToken: String? = null,
+    val refreshToken: String? = null,
+    val code: String? = null,
+    val error: String? = null
+)
+
+internal fun parseAuthCallbackUrl(url: String): AuthCallbackTokens {
+    var accessToken: String? = null
+    var refreshToken: String? = null
+    var code: String? = null
+    var error: String? = null
+
+    val fragmentIndex = url.indexOf('#')
+    if (fragmentIndex >= 0 && fragmentIndex < url.length - 1) {
+        val fragment = url.substring(fragmentIndex + 1)
+        val params = fragment.split("&")
+        for (p in params) {
+            val parts = p.split("=", limit = 2)
+            if (parts.size == 2) {
+                val key = parts[0]
+                val value = try {
+                    java.net.URLDecoder.decode(parts[1], "UTF-8")
+                } catch (_: Exception) {
+                    parts[1]
+                }
+                when (key) {
+                    "access_token" -> accessToken = value
+                    "refresh_token" -> refreshToken = value
+                    "error" -> error = value
+                    "error_description" -> error = value
+                }
+            }
+        }
+    }
+
+    val queryIndex = url.indexOf('?')
+    if (queryIndex >= 0) {
+        val endQuery = if (fragmentIndex > queryIndex) fragmentIndex else url.length
+        val query = url.substring(queryIndex + 1, endQuery)
+        val params = query.split("&")
+        for (p in params) {
+            val parts = p.split("=", limit = 2)
+            if (parts.size == 2) {
+                val key = parts[0]
+                val value = try {
+                    java.net.URLDecoder.decode(parts[1], "UTF-8")
+                } catch (_: Exception) {
+                    parts[1]
+                }
+                when (key) {
+                    "access_token" -> if (accessToken == null) accessToken = value
+                    "refresh_token" -> if (refreshToken == null) refreshToken = value
+                    "code" -> if (code == null) code = value
+                    "error" -> if (error == null) error = value
+                    "error_description" -> error = value
+                }
+            }
+        }
+    }
+
+    return AuthCallbackTokens(accessToken, refreshToken, code, error)
+}
+
 /**
  * Handles authentic Google Sign-In and session lifecycle via Supabase Auth.
+ * Adheres to strict session verification (Supabase session is the single source of truth).
  */
 class AuthRepository(private val context: Context) {
 
@@ -43,52 +110,66 @@ class AuthRepository(private val context: Context) {
     }
 
     init {
-        restoreCachedSession()
         observeSupabaseSession()
     }
 
-    private fun restoreCachedSession() {
-        val userId = prefs.getString(KEY_SAVED_USER_ID, null)
-        if (!userId.isNullOrBlank()) {
-            val email = prefs.getString(KEY_SAVED_EMAIL, null)
-            val name = prefs.getString(KEY_SAVED_NAME, null)
-            val avatar = prefs.getString(KEY_SAVED_AVATAR, null)
-            val reports = prefs.getInt(KEY_SAVED_REPORTS, 0)
-            val profile = UserProfile(
-                id = userId,
-                email = email,
-                fullName = name,
-                avatarUrl = avatar,
-                reportsSubmitted = reports
-            )
-            _authState.value = AuthState.Authenticated(profile)
-        } else {
-            _authState.value = AuthState.Unauthenticated
-        }
-    }
-
     private fun observeSupabaseSession() {
-        val client = SupabaseManager.getClient() ?: return
+        val client = SupabaseManager.getClient()
+        if (client == null) {
+            _authState.value = AuthState.Unauthenticated
+            return
+        }
         scope.launch {
             try {
+                // Check if Supabase client already has an active session from local session manager
+                val currentUser = client.auth.currentUserOrNull()
+                if (currentUser != null) {
+                    val cached = getCachedProfile()
+                    if (cached != null && cached.id == currentUser.id) {
+                        _authState.value = AuthState.Authenticated(cached)
+                    }
+                    fetchOrCreateProfile(currentUser.id, currentUser.email, currentUser.userMetadata)
+                } else {
+                    _authState.value = AuthState.Unauthenticated
+                }
+
                 client.auth.sessionStatus.collect { status ->
                     when (status) {
                         is SessionStatus.Authenticated -> {
                             val user = client.auth.currentUserOrNull()
                             if (user != null) {
                                 fetchOrCreateProfile(user.id, user.email, user.userMetadata)
+                            } else {
+                                _authState.value = AuthState.Unauthenticated
                             }
                         }
                         is SessionStatus.NotAuthenticated -> {
+                            prefs.edit().clear().apply()
                             _authState.value = AuthState.Unauthenticated
+                        }
+                        is SessionStatus.Initializing -> {
+                            _authState.value = AuthState.Loading
                         }
                         else -> Unit
                     }
                 }
             } catch (e: Exception) {
-                // Ignore background auth collection errors
+                if (_authState.value is AuthState.Loading) {
+                    _authState.value = AuthState.Unauthenticated
+                }
             }
         }
+    }
+
+    private fun getCachedProfile(): UserProfile? {
+        val userId = prefs.getString(KEY_SAVED_USER_ID, null) ?: return null
+        return UserProfile(
+            id = userId,
+            email = prefs.getString(KEY_SAVED_EMAIL, null),
+            fullName = prefs.getString(KEY_SAVED_NAME, null),
+            avatarUrl = prefs.getString(KEY_SAVED_AVATAR, null),
+            reportsSubmitted = prefs.getInt(KEY_SAVED_REPORTS, 0)
+        )
     }
 
     /**
@@ -100,73 +181,64 @@ class AuthRepository(private val context: Context) {
     }
 
     /**
-     * Handles the deep link redirect from Google OAuth (e.g. laze://auth/callback#access_token=... or ?code=...)
+     * Handles the deep link redirect from Google OAuth via Uri.
      */
-    suspend fun handleAuthCallback(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+    suspend fun handleAuthCallback(uri: Uri): Boolean = handleAuthCallback(uri.toString())
+
+    /**
+     * Handles the deep link redirect from Google OAuth via string.
+     */
+    suspend fun handleAuthCallback(urlString: String): Boolean = withContext(Dispatchers.IO) {
         try {
             _authState.value = AuthState.Loading
             val client = SupabaseManager.getClient()
-
-            // 1. Try fragment parsing (#access_token=...&refresh_token=...)
-            val fragment = uri.fragment
-            var accessToken: String? = null
-            var refreshToken: String? = null
-
-            if (!fragment.isNullOrBlank()) {
-                val params = fragment.split("&").associate { param ->
-                    val parts = param.split("=")
-                    if (parts.size >= 2) parts[0] to Uri.decode(parts[1]) else parts[0] to ""
-                }
-                accessToken = params["access_token"]
-                refreshToken = params["refresh_token"]
+            if (client == null) {
+                _authState.value = AuthState.Error("خدمة المصادقة غير مهيأة")
+                return@withContext false
             }
 
-            // 2. Try query params (?access_token=... or ?code=...)
-            if (accessToken.isNullOrBlank()) {
-                accessToken = uri.getQueryParameter("access_token")
-                refreshToken = uri.getQueryParameter("refresh_token")
+            val tokens = parseAuthCallbackUrl(urlString)
+
+            if (tokens.error != null) {
+                _authState.value = AuthState.Error(tokens.error)
+                return@withContext false
             }
 
-            val code = uri.getQueryParameter("code")
-
-            if (!accessToken.isNullOrBlank()) {
-                // If Supabase client is connected, import token
-                if (client != null && !refreshToken.isNullOrBlank()) {
+            if (!tokens.accessToken.isNullOrBlank()) {
+                if (!tokens.refreshToken.isNullOrBlank()) {
                     try {
-                        client.auth.importAuthToken(accessToken, refreshToken)
+                        client.auth.importAuthToken(tokens.accessToken, tokens.refreshToken)
                     } catch (e: Exception) {
-                        // Fallback: parse user details directly if token import has different signature
+                        _authState.value = AuthState.Error("فشل استيراد جلسة تسجيل الدخول: ${e.localizedMessage ?: "خطأ غير معروف"}")
+                        return@withContext false
                     }
                 }
 
-                // If user metadata can be read from client
-                val user = client?.auth?.currentUserOrNull()
-                val userId = user?.id ?: java.util.UUID.randomUUID().toString()
-                val email = user?.email ?: "user@laze.app"
-                fetchOrCreateProfile(userId, email, user?.userMetadata)
+                val user = client.auth.currentUserOrNull()
+                if (user == null) {
+                    _authState.value = AuthState.Error("تعذر التحقق من هوية المستخدم بعد تسجيل الدخول")
+                    return@withContext false
+                }
+                fetchOrCreateProfile(user.id, user.email, user.userMetadata)
                 return@withContext true
-            } else if (!code.isNullOrBlank() && client != null) {
-                // Exchange code for session via supabase-kt
+            } else if (!tokens.code.isNullOrBlank()) {
                 try {
-                    client.auth.exchangeCodeForSession(code)
+                    client.auth.exchangeCodeForSession(tokens.code)
                     val user = client.auth.currentUserOrNull()
                     if (user != null) {
                         fetchOrCreateProfile(user.id, user.email, user.userMetadata)
                         return@withContext true
+                    } else {
+                        _authState.value = AuthState.Error("تعذر استخراج بيانات المستخدم من الرمز المستلم")
+                        return@withContext false
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    _authState.value = AuthState.Error("فشل تبادل رمز المصادقة: ${e.localizedMessage ?: "خطأ غير معروف"}")
+                    return@withContext false
                 }
             }
 
-            // If we reached here without tokens, check if error was in callback
-            val error = uri.getQueryParameter("error_description") ?: uri.getQueryParameter("error")
-            if (error != null) {
-                _authState.value = AuthState.Error(error)
-                return@withContext false
-            }
-
-            _authState.value = AuthState.Unauthenticated
+            _authState.value = AuthState.Error("لم يتم استلام رمز مصادقة صالح")
             false
         } catch (e: Exception) {
             _authState.value = AuthState.Error(e.localizedMessage ?: "فشل تسجيل الدخول")
@@ -192,18 +264,17 @@ class AuthRepository(private val context: Context) {
                     }
                     .decodeSingleOrNull<UserProfile>()
             } catch (e: Exception) {
-                // Database fetch fallback
+                // Fallback to metadata creation or cached values if offline
             }
         }
 
         if (profile == null) {
-            // Extract display name from metadata if available
-            val fullName = metadata?.get("full_name")?.toString()?.trim('\"')
-                ?: metadata?.get("name")?.toString()?.trim('\"')
+            val fullName = metadata?.get("full_name")?.jsonPrimitive?.contentOrNull
+                ?: metadata?.get("name")?.jsonPrimitive?.contentOrNull
                 ?: email?.substringBefore('@')
                 ?: "مستخدم Laze"
-            val avatar = metadata?.get("avatar_url")?.toString()?.trim('\"')
-                ?: metadata?.get("picture")?.toString()?.trim('\"')
+            val avatar = metadata?.get("avatar_url")?.jsonPrimitive?.contentOrNull
+                ?: metadata?.get("picture")?.jsonPrimitive?.contentOrNull
 
             profile = UserProfile(
                 id = userId,
@@ -213,17 +284,16 @@ class AuthRepository(private val context: Context) {
                 reportsSubmitted = 0
             )
 
-            // Try inserting to Supabase
             if (client != null) {
                 try {
                     client.from("profiles").upsert(profile)
                 } catch (e: Exception) {
-                    // Ignore insert failure (e.g. offline)
+                    // Ignored if offline
                 }
             }
         }
 
-        // Cache locally
+        // Cache locally for display
         prefs.edit()
             .putString(KEY_SAVED_USER_ID, profile.id)
             .putString(KEY_SAVED_EMAIL, profile.email)
@@ -235,15 +305,33 @@ class AuthRepository(private val context: Context) {
         _authState.value = AuthState.Authenticated(profile)
     }
 
+    /**
+     * Signs out from Supabase Auth and clears all cached session data.
+     */
     suspend fun signOut() = withContext(Dispatchers.IO) {
         try {
             val client = SupabaseManager.getClient()
             client?.auth?.signOut()
         } catch (e: Exception) {
-            // Ignore signOut error
+            // Network failure during signOut should not prevent local cleanup
         } finally {
             prefs.edit().clear().apply()
             _authState.value = AuthState.Unauthenticated
+        }
+    }
+
+    /**
+     * Permanently deletes the current user account and data (Google Play compliance).
+     */
+    suspend fun deleteAccount(): Result<Unit> = withContext(Dispatchers.IO) {
+        val client = SupabaseManager.getClient()
+            ?: return@withContext Result.failure(IllegalStateException("خدمة الخادم غير متاحة"))
+        try {
+            client.postgrest.rpc("delete_own_account")
+            signOut()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -257,17 +345,5 @@ class AuthRepository(private val context: Context) {
         val updated = current.copy(reportsSubmitted = current.reportsSubmitted + 1)
         prefs.edit().putInt(KEY_SAVED_REPORTS, updated.reportsSubmitted).apply()
         _authState.value = AuthState.Authenticated(updated)
-
-        // Sync with backend if connected
-        val client = SupabaseManager.getClient() ?: return
-        scope.launch {
-            try {
-                client.from("profiles").update(mapOf("reports_submitted" to updated.reportsSubmitted)) {
-                    filter { eq("id", updated.id) }
-                }
-            } catch (e: Exception) {
-                // Offline ignore
-            }
-        }
     }
 }
