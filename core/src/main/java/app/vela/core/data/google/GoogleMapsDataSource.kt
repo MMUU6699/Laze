@@ -796,8 +796,11 @@ class GoogleMapsDataSource @Inject constructor(
         if (!app.vela.core.data.LowDataMode.enabled) kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
             runCatching { app.vela.core.data.naming.RoadNameTiles.roadsAlong(listOf(destination)) }
         }
-        return directionsPlain(origin, destination, mode, waypoints, avoidTolls, avoidHighways, avoidFerries, urgent, departBearingDeg, budgetMs)
-            .map { withLotTurn(it, urgent) }
+        val routes = directionsPlain(origin, destination, mode, waypoints, avoidTolls, avoidHighways, avoidFerries, urgent, departBearingDeg, budgetMs)
+        if (routes.isNotEmpty() && routes.first().source == RouteSource.MAPBOX) {
+            return routes
+        }
+        return routes.map { withLotTurn(it, urgent) }
     }
 
     /**
@@ -813,6 +816,10 @@ class GoogleMapsDataSource @Inject constructor(
                 app.vela.core.nav.ParkingLotTurn.wordDestination(route) { left -> app.vela.core.i18n.NavStringsRegistry.current().intoLot(left) }
             }.getOrNull()
         } ?: route
+    }
+
+    override fun prewarmRouting() {
+        activeRoutingProvider.prewarm()
     }
 
     /** OkHttpClient with timeouts scaled dynamically to trip distance: max(15s, 8s + 0.1s * km) capped at 60s. */
@@ -937,6 +944,9 @@ class GoogleMapsDataSource @Inject constructor(
                         }
                         (early ?: viaD.await()).firstOrNull()
                     }
+                }
+                if (via != null && (via.source == RouteSource.MAPBOX || app.vela.core.data.NoGoogle.enabled)) {
+                    return@coroutineScope listOf(via)
                 }
                 if (bounded && via == null) {
                     // Bounded + open router empty (issue #557): Google's direct route if it is back,
@@ -1131,6 +1141,9 @@ class GoogleMapsDataSource @Inject constructor(
                     }
                     early ?: openD.await()
                 }
+            }
+            if (openRaw.isNotEmpty() && (openRaw.first().source == RouteSource.MAPBOX || app.vela.core.data.NoGoogle.enabled)) {
+                return@coroutineScope openRaw
             }
             // THE OPEN ROUTER'S TURN NAMES ARE CHECKED TOO (2026-10-02): the road pieces under its
             // own line are asked for here and read once the routes are built (after this block), so

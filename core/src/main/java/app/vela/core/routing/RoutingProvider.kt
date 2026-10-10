@@ -38,4 +38,10 @@ interface RoutingProvider {
         departBearingDeg: Double? = null,
         timeoutMs: Long? = null,
     ): List<Route>
+
+    /**
+     * Pre-warm network and TLS connections in advance so subsequent route computations
+     * do not pay connection establishment latency.
+     */
+    fun prewarm() {}
 }

@@ -10,6 +10,9 @@ import kotlinx.coroutines.CancellationException
 /**
  * Composite routing provider that cascades through a prioritized chain of providers
  * (e.g. Mapbox -> Self-hosted Iraq OSRM -> Community OSRM -> On-Device).
+ *
+ * Integrates in-memory LRU routing cache (60s TTL) to prevent redundant queries
+ * and supports connection pre-warming across providers.
  */
 class CompositeRoutingProvider(
     val providers: List<RoutingProvider>,
@@ -17,6 +20,12 @@ class CompositeRoutingProvider(
 
     override val name: String = "Composite"
     override val source: RouteSource = RouteSource.UNKNOWN
+
+    override fun prewarm() {
+        for (provider in providers) {
+            runCatching { provider.prewarm() }
+        }
+    }
 
     override suspend fun route(
         origin: LatLng,
@@ -29,6 +38,23 @@ class CompositeRoutingProvider(
         departBearingDeg: Double?,
         timeoutMs: Long?,
     ): List<Route> {
+        // Check in-memory LRU cache first (60s TTL)
+        val cached = RoutingCache.get(
+            origin = origin,
+            destination = destination,
+            mode = mode,
+            waypoints = waypoints,
+            avoidTolls = avoidTolls,
+            avoidHighways = avoidHighways,
+            avoidFerries = avoidFerries,
+        )
+        if (!cached.isNullOrEmpty()) {
+            runCatching {
+                Log.d("LazeRouting", "Cache HIT for route query ($mode, ${cached.size} route(s))")
+            }
+            return cached
+        }
+
         for (provider in providers) {
             try {
                 val routes = provider.route(
@@ -46,13 +72,23 @@ class CompositeRoutingProvider(
                     runCatching {
                         Log.i("LazeRouting", "Route resolved by provider: ${provider.name} (count=${routes.size})")
                     }
+                    RoutingCache.put(
+                        origin = origin,
+                        destination = destination,
+                        mode = mode,
+                        waypoints = waypoints,
+                        avoidTolls = avoidTolls,
+                        avoidHighways = avoidHighways,
+                        avoidFerries = avoidFerries,
+                        routes = routes,
+                    )
                     return routes
                 }
             } catch (ce: CancellationException) {
                 throw ce
             } catch (t: Throwable) {
                 runCatching {
-                    Log.w("LazeRouting", "Provider ${provider.name} failed: ${t.message}")
+                    Log.w("LazeRouting", "Provider ${provider.name} failed: ${t.message}, falling back to next provider")
                 }
             }
         }

@@ -4088,7 +4088,8 @@ private fun MapSurface(
         // guidance is on hold without reading the bar. Traffic spans keep their colors.
         routeColor = if (state.navPaused) ROUTE_PAUSED_COLOR else routeTrafficColor(state.activeRoute),
         routeDashed = state.travelMode == app.vela.core.model.TravelMode.WALK ||
-            state.travelMode == app.vela.core.model.TravelMode.BICYCLE,
+            state.travelMode == app.vela.core.model.TravelMode.BICYCLE ||
+            state.routesLoading,
         // Paused: one color end to end, no traffic colors over the lavender.
         routeTrafficSpans = if (state.navPaused) emptyList() else routeTrafficSpans(state.activeRoute),
         // The expanded transit row's legs (issue #233) while the chooser owns the map, and the

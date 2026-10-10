@@ -1529,6 +1529,7 @@ class MapViewModel @Inject constructor(
             _state.update { it.copy(suggestions = emptyList(), querySuggestions = emptyList(), localSuggestions = emptyList()) }
             return
         }
+        runCatching { dataSource.prewarmRouting() }
         // Match the user's OWN history + lists FIRST, synchronous, no network, so these land
         // instantly (and are the only thing that shows offline). Independent of the debounced
         // Google fetch below, which appends behind them.
@@ -3517,6 +3518,7 @@ class MapViewModel @Inject constructor(
     }
 
     fun selectPlace(p: Place) {
+        runCatching { dataSource.prewarmRouting() }
         // A custom map's planned route, picked from the list: its line's own sheet.
         if (p.id.startsWith(ROUTE_ROW_ID)) {
             shapeForRow(p)?.let { openShape(it, p.location); _state.update { s -> s.copy(center = p.location) } }
@@ -6711,7 +6713,23 @@ class MapViewModel @Inject constructor(
         fun stillWanted() = _state.value.directionsOpen && _state.value.travelMode == effectiveMode
         routeJob?.cancel()
         savedRoutesJob?.cancel()
-        _state.update { it.copy(routesLoading = true, routeLifecycle = RouteLifecycleState.CALCULATING_ROUTE, status = null) }
+        // Immediate skeleton preview (<10ms) showing straight line while the live route is in flight
+        val skeletonRoute = Route(
+            polyline = listOf(origin) + stops + listOf(dest),
+            legs = emptyList(),
+            distanceMeters = origin.distanceTo(dest),
+            durationSeconds = 0.0,
+            durationInTrafficSeconds = null,
+            provisional = true,
+        )
+        _state.update {
+            it.copy(
+                routesLoading = true,
+                routeLifecycle = RouteLifecycleState.CALCULATING_ROUTE,
+                activeRoute = skeletonRoute,
+                status = null,
+            )
+        }
         val distKm = origin.distanceTo(dest) / 1000.0
         val dynamicTimeoutMs = ((8.0 + 0.1 * distKm).coerceIn(15.0, 60.0) + 10.0).toLong() * 1000L
         routeJob = viewModelScope.launch(vmExceptionHandler) {
@@ -6768,6 +6786,7 @@ class MapViewModel @Inject constructor(
                         it.copy(
                             routes = emptyList(),
                             routesLoading = false,
+                            activeRoute = null,
                             routeLifecycle = RouteLifecycleState.ROUTE_ERROR,
                             status = appContext.getString(R.string.mapvm_routing_timeout),
                         )
@@ -6781,6 +6800,7 @@ class MapViewModel @Inject constructor(
                         it.copy(
                             routes = emptyList(),
                             routesLoading = false,
+                            activeRoute = null,
                             routeLifecycle = RouteLifecycleState.ROUTE_ERROR,
                             status = appContext.getString(R.string.mapvm_routing_network_error),
                         )
@@ -6792,13 +6812,14 @@ class MapViewModel @Inject constructor(
                         it.copy(
                             routes = emptyList(),
                             routesLoading = false,
+                            activeRoute = null,
                             routeLifecycle = RouteLifecycleState.ROUTE_ERROR,
                             status = appContext.getString(R.string.mapvm_routing_network_error),
                         )
                     }
                 }
             } catch (e: CalibrationNeededException) {
-                if (stillWanted()) _state.update { it.copy(routes = emptyList(), routesLoading = false, routeLifecycle = RouteLifecycleState.ROUTE_ERROR, status = appContext.getString(R.string.mapvm_directions_need_recalibration, e.message)) }
+                if (stillWanted()) _state.update { it.copy(routes = emptyList(), routesLoading = false, activeRoute = null, routeLifecycle = RouteLifecycleState.ROUTE_ERROR, status = appContext.getString(R.string.mapvm_directions_need_recalibration, e.message)) }
             } catch (t: Throwable) {
                 if (stillWanted()) {
                     val msg = t.message.orEmpty()
@@ -6807,7 +6828,7 @@ class MapViewModel @Inject constructor(
                     } else {
                         appContext.getString(R.string.mapvm_routing_failed_reason, msg.ifBlank { t.javaClass.simpleName })
                     }
-                    _state.update { it.copy(routes = emptyList(), routesLoading = false, routeLifecycle = RouteLifecycleState.ROUTE_ERROR, status = statusText) }
+                    _state.update { it.copy(routes = emptyList(), routesLoading = false, activeRoute = null, routeLifecycle = RouteLifecycleState.ROUTE_ERROR, status = statusText) }
                 }
             }
         }

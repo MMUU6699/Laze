@@ -158,6 +158,9 @@ interface MapDataSource {
         avoidHighways: Boolean = false,
         avoidFerries: Boolean = false,
     ): Route = route
+
+    /** Pre-warm connection to primary routing engine to minimize latency when computing routes. */
+    fun prewarmRouting() {}
 }
 
 /**

@@ -2,17 +2,20 @@ package app.vela.core.routing
 
 import app.vela.core.BuildConfig
 import app.vela.core.data.google.PolylineCodec
+import app.vela.core.model.Lane
 import app.vela.core.model.LatLng
 import app.vela.core.model.Maneuver
 import app.vela.core.model.ManeuverType
 import app.vela.core.model.Route
 import app.vela.core.model.RouteLeg
 import app.vela.core.model.RouteSource
+import app.vela.core.model.TrafficSpan
 import app.vela.core.model.TravelMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -23,12 +26,15 @@ import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
 /**
- * Routing provider backed by Mapbox Directions API v5 with native Arabic guidance.
+ * High-performance routing provider backed by Mapbox Directions API v5.
  *
- * Requirements:
- * - Public token MUST be provided via [token] (defaults to [BuildConfig.MAPBOX_TOKEN]).
- * - When token is blank or invalid, falls back immediately without throwing uncaught exceptions.
- * - Respects distance-scaled timeout and cancellations.
+ * Key capabilities:
+ * - Uses `driving-traffic` profile for real-time congestion and live ETAs.
+ * - Native Arabic turn-by-turn maneuvers and instructions (`language=ar`).
+ * - Banner and voice guidance instructions (`banner_instructions=true`, `voice_instructions=true`).
+ * - Real-time traffic congestion annotations (`annotations=congestion,distance`).
+ * - Asynchronous HTTP connection pre-warming to cut initial DNS/TLS handshake overhead.
+ * - Supports up to 25 coordinates (1 origin + 23 intermediate stops + 1 destination).
  */
 class MapboxRoutingProvider(
     private val httpClient: OkHttpClient,
@@ -40,6 +46,20 @@ class MapboxRoutingProvider(
     override val source: RouteSource = RouteSource.MAPBOX
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    override fun prewarm() {
+        if (token.isBlank()) return
+        httpClient.dispatcher.executorService.execute {
+            runCatching {
+                val req = Request.Builder()
+                    .url("https://api.mapbox.com/directions/v5/mapbox/driving-traffic/0,0;0,0?access_token=$token")
+                    .head()
+                    .header("User-Agent", "Laze/1.0 (Android; Arabic Navigation)")
+                    .build()
+                httpClient.newCall(req).execute().close()
+            }
+        }
+    }
 
     override suspend fun route(
         origin: LatLng,
@@ -57,7 +77,7 @@ class MapboxRoutingProvider(
         }
 
         val profile = when (mode) {
-            TravelMode.DRIVE -> "driving"
+            TravelMode.DRIVE -> "driving-traffic"
             TravelMode.WALK -> "walking"
             TravelMode.BICYCLE -> "cycling"
             TravelMode.TRANSIT -> return@withContext emptyList()
@@ -69,9 +89,11 @@ class MapboxRoutingProvider(
             add(destination)
         }
 
-        if (allPoints.size < 2) return@withContext emptyList()
+        // Mapbox supports up to 25 coordinates for driving-traffic
+        if (allPoints.size < 2 || allPoints.size > 25) return@withContext emptyList()
 
         val coordsStr = allPoints.joinToString(";") { "${it.lng},${it.lat}" }
+        // Mapbox only returns alternatives when there are exactly 2 coordinates (no intermediate waypoints)
         val alternatives = waypoints.isEmpty()
 
         val excludeList = buildList {
@@ -88,19 +110,25 @@ class MapboxRoutingProvider(
             "&bearings=$normalized,60" + ";".repeat(allPoints.size - 1)
         } else ""
 
+        val annotationsParam = if (mode == TravelMode.DRIVE) "&annotations=congestion,distance" else ""
+
         val url = "$baseUrl/$profile/$coordsStr" +
             "?access_token=$token" +
             "&geometries=polyline6" +
             "&overview=full" +
             "&steps=true" +
+            "&banner_instructions=true" +
+            "&voice_instructions=true" +
             "&language=ar" +
             (if (alternatives) "&alternatives=true" else "&alternatives=false") +
+            annotationsParam +
             bearingParam +
             excludeParam
 
         val client = if (timeoutMs != null && timeoutMs > 0) {
             httpClient.newBuilder()
                 .callTimeout(timeoutMs, TimeUnit.MILLISECONDS)
+                .connectTimeout(minOf(timeoutMs, 5000L), TimeUnit.MILLISECONDS)
                 .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                 .build()
         } else {
@@ -118,7 +146,7 @@ class MapboxRoutingProvider(
                     return@withContext emptyList()
                 }
 
-                val bodyStr = response.body?.string().orEmpty()
+                val bodyStr = response.body.string()
                 if (bodyStr.isBlank()) return@withContext emptyList()
 
                 parseMapboxResponse(bodyStr)
@@ -144,13 +172,13 @@ class MapboxRoutingProvider(
 
             val totalDistance = routeObj["distance"]?.jsonPrimitive?.doubleOrNull ?: 0.0
             val totalDuration = routeObj["duration"]?.jsonPrimitive?.doubleOrNull ?: 0.0
+            val typicalDuration = routeObj["duration_typical"]?.jsonPrimitive?.doubleOrNull
 
             val legsArray = routeObj["legs"]?.jsonArray ?: return@mapNotNull null
             val parsedLegs = legsArray.map { legElem ->
                 val legObj = legElem.jsonObject
                 val legDist = legObj["distance"]?.jsonPrimitive?.doubleOrNull ?: 0.0
                 val legDur = legObj["duration"]?.jsonPrimitive?.doubleOrNull ?: 0.0
-                val summary = legObj["summary"]?.jsonPrimitive?.content
 
                 val stepsArray = legObj["steps"]?.jsonArray ?: emptyList()
                 val maneuvers = stepsArray.mapNotNull { stepElem ->
@@ -160,23 +188,69 @@ class MapboxRoutingProvider(
                 RouteLeg(
                     distanceMeters = legDist,
                     durationSeconds = legDur,
-                    durationInTrafficSeconds = null,
+                    durationInTrafficSeconds = legDur,
                     maneuvers = maneuvers,
                 )
             }
 
+            val trafficSpans = parseTrafficSpans(legsArray)
             val routeSummary = legsArray.firstOrNull()?.jsonObject?.get("summary")?.jsonPrimitive?.content
 
             Route(
                 polyline = polyline,
                 legs = parsedLegs,
                 distanceMeters = totalDistance,
-                durationSeconds = totalDuration,
-                durationInTrafficSeconds = null,
+                durationSeconds = typicalDuration ?: totalDuration,
+                durationInTrafficSeconds = totalDuration,
                 summary = routeSummary,
+                trafficSpans = trafficSpans,
                 source = RouteSource.MAPBOX,
             )
         }
+    }
+
+    private fun parseTrafficSpans(legsArray: kotlinx.serialization.json.JsonArray): List<TrafficSpan> {
+        val spans = mutableListOf<TrafficSpan>()
+        var currentOffsetM = 0.0
+
+        var activeLevel = 0
+        var activeStart = 0.0
+        var activeLen = 0.0
+
+        for (legElem in legsArray) {
+            val annotation = legElem.jsonObject["annotation"]?.jsonObject ?: continue
+            val congestionArray = annotation["congestion"]?.jsonArray ?: continue
+            val distanceArray = annotation["distance"]?.jsonArray ?: continue
+
+            val count = minOf(congestionArray.size, distanceArray.size)
+            for (i in 0 until count) {
+                val cStr = congestionArray[i].jsonPrimitive.content
+                val segDist = distanceArray[i].jsonPrimitive.doubleOrNull ?: 0.0
+
+                val level = when (cStr.lowercase()) {
+                    "moderate" -> 1
+                    "heavy" -> 2
+                    "severe" -> 3
+                    else -> 0
+                }
+
+                if (level == activeLevel) {
+                    activeLen += segDist
+                } else {
+                    if (activeLevel > 0 && activeLen > 0.0) {
+                        spans.add(TrafficSpan(activeLevel, activeStart, activeLen))
+                    }
+                    activeLevel = level
+                    activeStart = currentOffsetM
+                    activeLen = segDist
+                }
+                currentOffsetM += segDist
+            }
+        }
+        if (activeLevel > 0 && activeLen > 0.0) {
+            spans.add(TrafficSpan(activeLevel, activeStart, activeLen))
+        }
+        return spans
     }
 
     private fun parseStep(stepObj: kotlinx.serialization.json.JsonObject): Maneuver? {
@@ -197,6 +271,14 @@ class MapboxRoutingProvider(
         val maneuverType = mapManeuverType(type, modifier)
         val exitNumber = manObj["exit"]?.jsonPrimitive?.intOrNull
 
+        val intersections = stepObj["intersections"]?.jsonArray
+        val lanes = intersections?.firstOrNull()?.jsonObject?.get("lanes")?.jsonArray?.mapNotNull { laneElem ->
+            val laneObj = laneElem.jsonObject
+            val valid = laneObj["valid"]?.jsonPrimitive?.booleanOrNull ?: false
+            val indications = laneObj["indications"]?.jsonArray?.mapNotNull { it.jsonPrimitive.content } ?: emptyList()
+            Lane(indications = indications, valid = valid)
+        } ?: emptyList()
+
         return Maneuver(
             type = maneuverType,
             instruction = instruction,
@@ -206,6 +288,7 @@ class MapboxRoutingProvider(
             road = name ?: ref,
             ref = ref?.substringBefore(";")?.trim(),
             roundaboutExit = exitNumber,
+            lanes = lanes,
         )
     }
 
@@ -235,7 +318,12 @@ class MapboxRoutingProvider(
             "roundabout", "rotary" -> ManeuverType.ROUNDABOUT
             "roundabout turn", "exit roundabout", "exit rotary" -> ManeuverType.EXIT_ROUNDABOUT
             "continue", "new name" -> {
-                if (modifier == null || modifier == "straight") ManeuverType.CONTINUE else byModifier()
+                when (modifier?.lowercase()) {
+                    null, "straight" -> ManeuverType.CONTINUE
+                    "slight left", "left" -> ManeuverType.KEEP_LEFT
+                    "slight right", "right" -> ManeuverType.KEEP_RIGHT
+                    else -> byModifier()
+                }
             }
             "turn", "end of road" -> byModifier()
             else -> ManeuverType.STRAIGHT
