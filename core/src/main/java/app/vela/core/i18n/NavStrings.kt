@@ -131,6 +131,10 @@ interface NavStrings {
      * natively by the French voice).
      */
     fun expandForSpeech(text: String): String = text
+
+    /** Spoken alert for a road hazard/report along the route. */
+    fun hazardAlert(reportType: app.vela.core.backend.RoadReportType): String =
+        "Caution ahead: ${reportType.titleEn}"
 }
 
 /** English (source of truth) — byte-identical to the original `osrmPhrase`, so existing nav tests pass. */
@@ -2289,6 +2293,7 @@ object ArNavStrings : NavStrings {
         return when (type) {
             "depart" -> if (r != null) "انطلق$onRoad" else "انطلق في مسارك"
             "arrive" -> "وصلت إلى وجهتك"
+            "uturn" -> "قم بالدوران للخلف$onto"
             "turn", "end of road" -> {
                 if (m == "للدوران للخلف") "قم بالدوران للخلف$onto"
                 else if (m.isNotBlank()) "انعطف $m$onto"
@@ -2397,6 +2402,39 @@ object ArNavStrings : NavStrings {
             LaneSide.CENTER -> "الوسط"
         }
         return if (count > 1) "الزم المسارات الـ $count على $sideWord" else "الزم المسار على $sideWord"
+    }
+
+    override fun hazardAlert(reportType: app.vela.core.backend.RoadReportType): String =
+        "تنبيه على الطريق: ${reportType.titleAr}"
+
+    override fun expandForSpeech(text: String): String {
+        var t = text
+        // Expand common Arabic street/road abbreviations
+        t = t.replace(Regex("""(^|\s)ش\.\s*"""), "$1شارع ")
+        t = t.replace(Regex("""(^|\s)ط\.\s*"""), "$1طريق ")
+        t = t.replace(Regex("""(^|\s)ج\.\s*"""), "$1جسر ")
+        t = t.replace(Regex("""(^|\s)م\.\s*"""), "$1مخرج ")
+        t = t.replace(Regex("""(^|\s)د\.\s*"""), "$1دوار ")
+        // Normalize Eastern Arabic numerals ('٠'..'٩') to Western digits ('0'..'9')
+        // so standard Android TTS engines (Google TTS, Samsung TTS) inflect the number
+        // accurately according to the following Arabic noun ("500 متر" -> "خمسمائة متر")
+        val sb = StringBuilder(t.length)
+        for (ch in t) {
+            when (ch) {
+                '٠' -> sb.append('0')
+                '١' -> sb.append('1')
+                '٢' -> sb.append('2')
+                '٣' -> sb.append('3')
+                '٤' -> sb.append('4')
+                '٥' -> sb.append('5')
+                '٦' -> sb.append('6')
+                '٧' -> sb.append('7')
+                '٨' -> sb.append('8')
+                '٩' -> sb.append('9')
+                else -> sb.append(ch)
+            }
+        }
+        return sb.toString()
     }
 }
 

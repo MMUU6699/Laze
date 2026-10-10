@@ -12,6 +12,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -206,15 +207,12 @@ fun VelaRoot(vm: MapViewModel = hiltViewModel()) {
             // offer is the next step once that's answered.
             if (Onboarding.showVoicePrompt.value) {
                 VoicePrompt(
-                    // The Vela voice is recommended for EVERYONE, but the choice is honest: the
-                    // prominent button downloads it, the quiet one keeps whatever voice the phone
-                    // already has. Same prompt regardless of what's installed.
-                    sizeMb = vm.defaultVoiceSizeMb(),
-                    onDownload = {
-                        vm.downloadPiper()
+                    onTestVoice = { vm.testVoice() },
+                    onSetupVoice = {
                         Onboarding.dismissVoicePrompt(context)
+                        vm.openVoiceHealthDialog()
                     },
-                    onUseExisting = { Onboarding.dismissVoicePrompt(context) },
+                    onDismiss = { Onboarding.dismissVoicePrompt(context) },
                 )
             } else if (Onboarding.showDonatePrompt.value) {
                 DonatePrompt(
@@ -246,30 +244,45 @@ fun VelaRoot(vm: MapViewModel = hiltViewModel()) {
     }
 }
 
-/** One-time, first-run offer of Vela's on-device neural voice. RECOMMENDED for everyone, but an
- *  honest two-way choice: the prominent "Download Vela voice" vs a quiet, low-emphasis "Use existing
- *  voice" that keeps whatever TTS the phone already has (nav still works through it). Not a fake or
- *  disabled option, just visibly de-emphasized so the recommendation is clear. Either choice is
- *  one-time; the voice is changeable any time in Settings → Voice. [sizeMb] is the real download
- *  size, so the number never goes stale. */
+/** Lightweight onboarding check for system TTS health and Arabic speech availability. */
 @Composable
-private fun VoicePrompt(sizeMb: Int, onDownload: () -> Unit, onUseExisting: () -> Unit) {
+private fun VoicePrompt(
+    onTestVoice: () -> Unit,
+    onSetupVoice: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var health by remember { mutableStateOf<app.vela.core.voice.VoiceHealthStatus?>(null) }
+    LaunchedEffect(Unit) {
+        app.vela.ui.voice.VoiceHealthHelper.checkVoiceHealth(context) {
+            health = it
+        }
+    }
+
+    val isReady = health?.isReady == true
+    val title = if (isReady) {
+        stringResource(R.string.onboarding_voice_ready_title)
+    } else {
+        stringResource(R.string.onboarding_voice_setup_needed)
+    }
+    val desc = if (isReady) {
+        stringResource(R.string.onboarding_voice_ready_desc)
+    } else {
+        stringResource(R.string.onboarding_voice_setup_desc)
+    }
+
     VelaDialog(
-        onDismissRequest = onUseExisting,
-        title = stringResource(R.string.root_voice_title),
-        confirmText = stringResource(R.string.root_voice_download),
-        onConfirm = onDownload,
-        dismissText = stringResource(R.string.root_voice_use_system),
-        onDismiss = onUseExisting,
-        dismissLowEmphasis = true,
+        onDismissRequest = onDismiss,
+        title = title,
+        confirmText = if (isReady) stringResource(R.string.settings_voice_health_test) else stringResource(R.string.settings_voice_health_fix),
+        onConfirm = {
+            if (isReady) onTestVoice() else onSetupVoice()
+        },
+        dismissText = stringResource(R.string.welcome_continue),
+        onDismiss = onDismiss,
+        dismissLowEmphasis = !isReady,
         text = {
-            // Two short paragraphs: the pitch, then the alternative + where to change it. The blank
-            // line keeps the block from reading as one dense wall on a small screen.
-            Text(
-                stringResource(R.string.root_voice_body_intro, sizeMb) + "\n\n" +
-                    stringResource(R.string.root_voice_body_system) + " " +
-                    stringResource(R.string.root_voice_body_outro),
-            )
+            Text(desc)
         },
     )
 }

@@ -474,6 +474,8 @@ data class MapUiState(
     val hazardAlertDismissedId: String? = null,
     val authProfile: app.vela.core.backend.UserProfile? = null,
     val isGuestUser: Boolean = true,
+    val showVoiceHealthDialog: Boolean = false,
+    val voiceHealthStatus: app.vela.core.voice.VoiceHealthStatus? = null,
 )
 
 /**
@@ -671,9 +673,8 @@ class MapViewModel @Inject constructor(
                         if (nextHazard != null && s.currentHazardAlert?.id != nextHazard.id) {
                             _state.update { it.copy(currentHazardAlert = nextHazard) }
                             withContext(Dispatchers.Main) {
-                                val isArabic = app.vela.core.i18n.NavStringsRegistry.current().locale.language.startsWith("ar")
-                                val title = if (isArabic) nextHazard.type.titleAr else nextHazard.type.titleEn
-                                voice.speak(appContext.getString(R.string.report_nav_alert_title) + ": " + title)
+                                val alertText = app.vela.core.i18n.NavStringsRegistry.current().hazardAlert(nextHazard.type)
+                                voice.speak(alertText)
                                 if (nextHazard.type == app.vela.core.backend.RoadReportType.CLOSURE ||
                                     nextHazard.type == app.vela.core.backend.RoadReportType.TRAFFIC) {
                                     navSession.forceRecheck()
@@ -856,22 +857,21 @@ class MapViewModel @Inject constructor(
         voice.langUnavailable = { lang ->
             if (lang != lastVoiceLangHinted) {
                 lastVoiceLangHinted = lang
-                val endonym = app.vela.ui.AppLocale.endonym(lang)
-                // Two fixes for two causes. A language Vela CAN train a voice for (fr, ru, …) →
-                // nudge to the voice library. One it CAN'T (Japanese: no Piper/espeak voice) → the
-                // library is a dead end, so point at the phone's own voice settings to add a system
-                // voice, which is where ja guidance is spoken from.
-                val hasVela = app.vela.core.voice.PiperCatalog.hasVoiceFor(lang)
-                val msg = appContext.getString(
-                    if (hasVela) R.string.mapvm_voice_lang_missing else R.string.mapvm_voice_lang_system,
-                    endonym,
-                )
-                // The pill downloads the language's recommended voice in one tap (2026-09-28: a
-                // phone switched to Russian mid-session went silent with a hint that only opened the
-                // library). Once it is installed the guide switches to it by itself (voiceFor).
-                val voiceId = if (hasVela) app.vela.core.voice.PiperCatalog.defaultFor(lang).id else null
-                viewModelScope.launch(Dispatchers.Main) {
-                    flashStatus(msg, 15_000L, voiceAction = true, ttsSettings = !hasVela, voiceDownloadId = voiceId)
+                if (lang.startsWith("ar")) {
+                    app.vela.ui.voice.VoiceHealthHelper.checkVoiceHealth(appContext) { health ->
+                        _state.update { it.copy(showVoiceHealthDialog = true, voiceHealthStatus = health) }
+                    }
+                } else {
+                    val endonym = app.vela.ui.AppLocale.endonym(lang)
+                    val hasVela = app.vela.core.voice.PiperCatalog.hasVoiceFor(lang)
+                    val msg = appContext.getString(
+                        if (hasVela) R.string.mapvm_voice_lang_missing else R.string.mapvm_voice_lang_system,
+                        endonym,
+                    )
+                    val voiceId = if (hasVela) app.vela.core.voice.PiperCatalog.defaultFor(lang).id else null
+                    viewModelScope.launch(Dispatchers.Main) {
+                        flashStatus(msg, 15_000L, voiceAction = true, ttsSettings = !hasVela, voiceDownloadId = voiceId)
+                    }
                 }
             }
         }
@@ -7334,7 +7334,26 @@ class MapViewModel @Inject constructor(
             return
         }
         _state.update { it.copy(routeLifecycle = RouteLifecycleState.STARTING_NAVIGATION) }
+        if (!_state.value.voiceMuted && app.vela.core.i18n.NavStringsRegistry.current().locale.language.startsWith("ar")) {
+            val health = voice.checkCurrentVoiceHealth("ar")
+            if (!health.isReady) {
+                _state.update { it.copy(showVoiceHealthDialog = true, voiceHealthStatus = health) }
+            }
+        }
         nav.startNav()
+    }
+    fun dismissVoiceHealthDialog() {
+        _state.update { it.copy(showVoiceHealthDialog = false) }
+    }
+    fun openVoiceHealthDialog() {
+        app.vela.ui.voice.VoiceHealthHelper.checkVoiceHealth(appContext, state.value.selectedEngine?.packageName) { status ->
+            _state.update { it.copy(showVoiceHealthDialog = true, voiceHealthStatus = status) }
+        }
+    }
+    fun setTempEnglishGuidance() {
+        app.vela.core.i18n.NavStringsRegistry.setLocale(java.util.Locale.ENGLISH)
+        _state.update { it.copy(showVoiceHealthDialog = false) }
+        voice.test()
     }
     fun stopNav() = nav.stopNav()
     fun onNavPanned() = nav.onNavPanned()

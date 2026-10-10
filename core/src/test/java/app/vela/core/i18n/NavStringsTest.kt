@@ -201,4 +201,39 @@ class NavStringsTest {
         assertTrue(uk.spokenDistance(3000.0, imperial = false).contains("кілометри"))
         assertTrue(uk.spokenDistance(5000.0, imperial = false).contains("кілометрів"))
     }
+
+    @Test fun `arabic navigation phrases and distances render accurately`() {
+        val ar = ArNavStrings
+        assertEquals("انعطف يمينًا نحو شارع الرشيد", ar.phrase("turn", "right", "شارع الرشيد", null, null, null))
+        assertEquals("انعطف يسارًا نحو شارع فلسطين", ar.phrase("turn", "left", "شارع فلسطين", null, null, null))
+        assertEquals("قم بالدوران للخلف نحو طريق المطار", ar.phrase("uturn", "uturn", "طريق المطار", null, null, null))
+        assertEquals("وصلت إلى وجهتك", ar.phrase("arrive", null, null, null, null, null))
+        assertEquals("ادخل الدوار واسلك المخرج الثاني نحو شارع دمشق", ar.phrase("roundabout", null, "شارع دمشق", null, null, 2))
+
+        // Spoken distance
+        assertEquals("500 متر", ar.spokenDistance(500.0, imperial = false))
+        assertEquals("كيلومتر واحد", ar.spokenDistance(1000.0, imperial = false))
+        assertEquals("كيلومترين", ar.spokenDistance(2000.0, imperial = false))
+    }
+
+    @Test fun `arabic expandForSpeech expands road abbreviations and normalizes numerals`() {
+        val ar = ArNavStrings
+        assertEquals("شارع الرشيد", ar.expandForSpeech("ش. الرشيد"))
+        assertEquals("طريق المطار", ar.expandForSpeech("ط. المطار"))
+        assertEquals("جسر الجادرية", ar.expandForSpeech("ج. الجادرية"))
+        assertEquals("مخرج 14", ar.expandForSpeech("م. 14"))
+        assertEquals("دوار النسور", ar.expandForSpeech("د. النسور"))
+
+        // Eastern Arabic numerals normalization to Western digits for robust TTS inflection
+        assertEquals("بعد 500 متر انعطف يمينًا", ar.expandForSpeech("بعد ٥٠٠ متر انعطف يمينًا"))
+        assertEquals("المسافة 12.5 كم", ar.expandForSpeech("المسافة ١٢.٥ كم"))
+    }
+
+    @Test fun `arabic hazard alert speaks localized report category`() {
+        val ar = ArNavStrings
+        assertEquals("تنبيه على الطريق: حادث مروري", ar.hazardAlert(app.vela.core.backend.RoadReportType.ACCIDENT))
+        assertEquals("تنبيه على الطريق: ازدحام مروري", ar.hazardAlert(app.vela.core.backend.RoadReportType.TRAFFIC))
+        assertEquals("تنبيه على الطريق: إغلاق طريق", ar.hazardAlert(app.vela.core.backend.RoadReportType.CLOSURE))
+        assertEquals("تنبيه على الطريق: كاميرا سرعة", ar.hazardAlert(app.vela.core.backend.RoadReportType.SPEED_CAMERA))
+    }
 }

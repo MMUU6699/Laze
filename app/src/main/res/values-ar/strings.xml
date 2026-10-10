@@ -1458,4 +1458,24 @@
         <item quantity="one">واحد (%1$d)</item>
         <item quantity="other">%1$d عنصر</item>
     </plurals>
+
+    <string name="voice_health_dialog_title">إعداد التوجيه الصوتي بالعربية</string>
+    <string name="voice_health_data_missing">يحتاج محرك تحويل النص إلى كلام على هاتفك إلى تنزيل حزمة الصوت العربي لنطق التوجيهات والتنبيهات أثناء القيادة.</string>
+    <string name="voice_health_offline_missing">الصوت العربي متوفر عبر الإنترنت فقط. يُوصى بتنزيل الصوت للعمل دون انقطاع ودون اتصال بالإنترنت.</string>
+    <string name="voice_health_not_supported">محرك الصوت الحالي لا يدعم اللغة العربية. يمكنك تثبيت خدمات الصوت من Google أو اختيار محرك يدعم العربية.</string>
+    <string name="voice_health_no_engine">لم يتم العثور على أي محرك لتحويل النص إلى كلام (TTS). يرجى تثبيت خدمات الصوت من Google.</string>
+    <string name="voice_health_init_failed">تعذرت تهيئة محرك تحويل النص إلى كلام على الهاتف. يرجى مراجعة إعدادات الصوت.</string>
+    <string name="voice_health_btn_install_data">تثبيت بيانات الصوت</string>
+    <string name="voice_health_btn_tts_settings">إعدادات تحويل النص إلى كلام</string>
+    <string name="voice_health_btn_google_tts">تنزيل Google TTS</string>
+    <string name="voice_health_btn_use_english">إرشاد بالإنجليزية مؤقتًا</string>
+    <string name="voice_health_btn_dismiss">متابعة بدون صوت</string>
+    <string name="settings_voice_health_card_title">حالة الصوت العربي</string>
+    <string name="settings_voice_health_ready">الصوت العربي جاهز ويعمل دون إنترنت</string>
+    <string name="settings_voice_health_test">اختبار الصوت</string>
+    <string name="settings_voice_health_fix">إصلاح / تثبيت الصوت</string>
+    <string name="onboarding_voice_ready_title">التوجيه الصوتي بالعربية جاهز</string>
+    <string name="onboarding_voice_ready_desc">التوجيه الصوتي جاهز للاستخدام ومربوط بمحرك الصوت في هاتفك.</string>
+    <string name="onboarding_voice_setup_needed">تثبيت الصوت العربي</string>
+    <string name="onboarding_voice_setup_desc">لسماع إرشادات الطرق والتنبيهات بالعربية، يرجى تثبيت حزمة الصوت العربي من إعدادات تحويل النص إلى كلام.</string>
 </resources>

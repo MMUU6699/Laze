@@ -85,8 +85,9 @@ object Onboarding {
         val locationPromptDone = p.getBoolean("location_prompt_done", false)
         showLocationPrompt.value = welcomeDone.value && !locationPromptDone && !hasLocation(context)
 
-        // Voice prompt: default off so users are not blocked or nagged to download heavy neural voice models
-        showVoicePrompt.value = false
+        // Voice prompt: check system TTS readiness if location & welcome are done and voice prompt not yet completed
+        val voicePromptDone = p.getBoolean("voice_prompt_done", false)
+        showVoicePrompt.value = welcomeDone.value && locationPromptDone && !voicePromptDone
     }
 
     private fun hasLocation(context: Context): Boolean =
@@ -109,8 +110,8 @@ object Onboarding {
         p.edit().putBoolean("location_prompt_done", true).apply()
         if (!p.getBoolean("notif_prompt_done", false) && !hasNotifications(context)) {
             showNotifPrompt.value = true
-        } else {
-            showVoicePrompt.value = false
+        } else if (!p.getBoolean("voice_prompt_done", false)) {
+            showVoicePrompt.value = true
         }
     }
 
@@ -119,7 +120,9 @@ object Onboarding {
         showNotifPrompt.value = false
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         p.edit().putBoolean("notif_prompt_done", true).apply()
-        showVoicePrompt.value = false
+        if (!p.getBoolean("voice_prompt_done", false)) {
+            showVoicePrompt.value = true
+        }
     }
 
     /** Mark the voice prompt handled so it never shows again. It's the last onboarding step. */
@@ -139,8 +142,8 @@ object Onboarding {
             showLocationPrompt.value = true
         } else if (!p.getBoolean("notif_prompt_done", false) && !hasNotifications(context)) {
             showNotifPrompt.value = true
-        } else {
-            showVoicePrompt.value = false
+        } else if (!p.getBoolean("voice_prompt_done", false)) {
+            showVoicePrompt.value = true
         }
     }
 

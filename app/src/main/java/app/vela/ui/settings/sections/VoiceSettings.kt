@@ -95,6 +95,75 @@ internal fun VoiceSettingsScreen(vm: MapViewModel, onBack: () -> Unit, openLibra
             Hint(stringResource(R.string.settings_spoken_detail_hint))
         }
         }
+        Spacer(Modifier.height(8.dp))
+
+        // Arabic Voice Health Card
+        var healthCheck by remember { mutableStateOf<app.vela.core.voice.VoiceHealthStatus?>(null) }
+        var checkingHealth by remember { mutableStateOf(false) }
+
+        androidx.compose.runtime.LaunchedEffect(state.selectedEngine) {
+            checkingHealth = true
+            app.vela.ui.voice.VoiceHealthHelper.checkVoiceHealth(context, state.selectedEngine?.packageName) {
+                healthCheck = it
+                checkingHealth = false
+            }
+        }
+
+        SettingsGroup {
+            androidx.compose.foundation.layout.Column(
+                modifier = Modifier.padding(16.dp).fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        stringResource(R.string.settings_voice_health_card_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    val isReady = healthCheck?.isReady == true
+                    androidx.compose.material3.Surface(
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = if (isReady) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                    ) {
+                        Text(
+                            text = if (isReady) "جاهز" else if (checkingHealth) "جارٍ الفحص…" else "يحتاج إعداد",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isReady) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                healthCheck?.let { h ->
+                    Spacer(Modifier.height(8.dp))
+                    val desc = when (h.level) {
+                        app.vela.core.voice.VoiceHealthLevel.READY -> stringResource(R.string.settings_voice_health_ready)
+                        app.vela.core.voice.VoiceHealthLevel.OFFLINE_MISSING -> stringResource(R.string.voice_health_offline_missing)
+                        app.vela.core.voice.VoiceHealthLevel.DATA_MISSING -> stringResource(R.string.voice_health_data_missing)
+                        app.vela.core.voice.VoiceHealthLevel.NOT_SUPPORTED -> stringResource(R.string.voice_health_not_supported)
+                        app.vela.core.voice.VoiceHealthLevel.NO_ENGINE -> stringResource(R.string.voice_health_no_engine)
+                        app.vela.core.voice.VoiceHealthLevel.INIT_FAILED -> stringResource(R.string.voice_health_init_failed)
+                    }
+                    Text(
+                        desc,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(onClick = { vm.testVoice() }) {
+                        Text(stringResource(R.string.settings_voice_health_test))
+                    }
+                    if (healthCheck?.isReady != true && !checkingHealth) {
+                        FilledTonalButton(onClick = { vm.openVoiceHealthDialog() }) {
+                            Text(stringResource(R.string.settings_voice_health_fix))
+                        }
+                    }
+                }
+            }
+        }
         Spacer(Modifier.height(4.dp))
         // Vela's own on-device neural voices - offer a one-tap download for whichever isn't
         // present yet; once downloaded each shows in the engine list below (selectable). No

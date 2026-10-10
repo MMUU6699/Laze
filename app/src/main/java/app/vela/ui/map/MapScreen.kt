@@ -2850,6 +2850,29 @@ fun MapScreen(
             AreaPickOverlay(state, vm, zoomButtons = dpadMode || app.vela.ui.PreferButtons.on.value) { mapDpad.zoomBy(it) }
         }
         PipNavOverlay(state, pipUi)
+
+        if (state.showVoiceHealthDialog) {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            app.vela.ui.voice.VoiceHealthDialog(
+                status = state.voiceHealthStatus,
+                onDismiss = { vm.dismissVoiceHealthDialog() },
+                onInstallData = {
+                    vm.dismissVoiceHealthDialog()
+                    app.vela.ui.voice.VoiceHealthHelper.openTtsDataInstall(ctx)
+                },
+                onOpenTtsSettings = {
+                    vm.dismissVoiceHealthDialog()
+                    app.vela.ui.voice.VoiceHealthHelper.openTtsSettings(ctx)
+                },
+                onDownloadGoogleTts = {
+                    vm.dismissVoiceHealthDialog()
+                    app.vela.ui.voice.VoiceHealthHelper.openGoogleTtsPlayStore(ctx)
+                },
+                onUseEnglish = {
+                    vm.setTempEnglishGuidance()
+                },
+            )
+        }
     }
 }
 

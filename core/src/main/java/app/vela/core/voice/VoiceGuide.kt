@@ -258,12 +258,26 @@ class VoiceGuide @Inject constructor(
 
     private fun attachTtsListener() {
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
-            override fun onDone(utteranceId: String?) = releaseFocus()
+            override fun onStart(utteranceId: String?) {
+                android.util.Log.d("VoiceGuide", "TTS onStart utterance=$utteranceId")
+            }
+            override fun onDone(utteranceId: String?) {
+                android.util.Log.d("VoiceGuide", "TTS onDone utterance=$utteranceId")
+                releaseFocus()
+            }
             // QUEUE_FLUSH fires onStop (not onDone) for the flushed utterance — without this
             // override every interrupt stranded a refcount and focus never released.
-            override fun onStop(utteranceId: String?, interrupted: Boolean) = releaseFocus()
+            override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                android.util.Log.d("VoiceGuide", "TTS onStop utterance=$utteranceId interrupted=$interrupted")
+                releaseFocus()
+            }
+            override fun onError(utteranceId: String?, errorCode: Int) {
+                android.util.Log.e("VoiceGuide", "TTS onError utterance=$utteranceId errorCode=$errorCode")
+                working = false
+                releaseFocus()
+            }
             @Deprecated("deprecated") override fun onError(utteranceId: String?) {
+                android.util.Log.e("VoiceGuide", "TTS onError (deprecated) utterance=$utteranceId")
                 working = false // the engine accepted text but couldn't synthesize it
                 releaseFocus()
             }
@@ -275,6 +289,7 @@ class VoiceGuide @Inject constructor(
     fun test() = speak(app.vela.core.i18n.NavStringsRegistry.current().voiceTest(), interrupt = true, ignoreMute = true)
 
     override fun onInit(status: Int) {
+        android.util.Log.i("VoiceGuide", "TTS onInit status=$status (SUCCESS=${TextToSpeech.SUCCESS}) engine=$currentEngine")
         val t = tts
         if (status != TextToSpeech.SUCCESS || t == null) {
             systemReady = false
@@ -350,6 +365,50 @@ class VoiceGuide @Inject constructor(
         }
         val vela = if (VelaPiper.isReady(context)) listOf(VoiceEngine(VelaPiper.ENGINE_ID, VelaPiper.LABEL)) else emptyList()
         return vela + installed
+    }
+
+    /**
+     * Check TTS health for the specified language (default "ar").
+     * Returns a [VoiceHealthStatus] detailing whether the system engine has offline voices available.
+     */
+    fun checkCurrentVoiceHealth(lang: String = "ar"): VoiceHealthStatus {
+        val t = tts
+        val engines = availableEngines()
+        if (engines.isEmpty()) {
+            return VoiceHealthEvaluator.evaluate(
+                initStatus = VoiceHealthEvaluator.ERROR,
+                hasInstalledEngines = false,
+                langAvailCode = VoiceHealthEvaluator.LANG_NOT_SUPPORTED,
+                offlineArabicVoiceCount = 0,
+                enginePackage = currentEngine,
+            )
+        }
+        if (t == null || !systemReady) {
+            return VoiceHealthEvaluator.evaluate(
+                initStatus = if (systemInitFailed) VoiceHealthEvaluator.ERROR else VoiceHealthEvaluator.SUCCESS,
+                hasInstalledEngines = true,
+                langAvailCode = VoiceHealthEvaluator.LANG_NOT_SUPPORTED,
+                offlineArabicVoiceCount = 0,
+                enginePackage = currentEngine,
+                engineLabel = engines.firstOrNull { it.packageName == currentEngine }?.label,
+            )
+        }
+        val avail = runCatching { t.isLanguageAvailable(Locale(lang)) }.getOrDefault(VoiceHealthEvaluator.LANG_NOT_SUPPORTED)
+        val voices = runCatching { t.voices.orEmpty() }.getOrDefault(emptySet())
+            .filter { it.locale.language == lang }
+        val offlineCount = voices.count {
+            !it.isNetworkConnectionRequired &&
+                it.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) != true
+        }
+        return VoiceHealthEvaluator.evaluate(
+            initStatus = VoiceHealthEvaluator.SUCCESS,
+            hasInstalledEngines = true,
+            langAvailCode = avail,
+            offlineArabicVoiceCount = offlineCount,
+            totalArabicVoiceCount = voices.size,
+            enginePackage = currentEngine,
+            engineLabel = engines.firstOrNull { it.packageName == currentEngine }?.label,
+        )
     }
 
     /** Speak [text]; [interrupt] flushes the queue (use for the imminent turn). [ignoreMute] is for
@@ -462,6 +521,7 @@ class VoiceGuide @Inject constructor(
         }
         if (t != lastSystemLang) {
             val avail = runCatching { engine.setLanguage(Locale(t)) }.getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+            android.util.Log.i("VoiceGuide", "TTS setLanguage('$t') returned $avail (LANG_AVAILABLE=${TextToSpeech.LANG_AVAILABLE})")
             if (avail < TextToSpeech.LANG_AVAILABLE) {
                 working = false
                 langUnavailable?.invoke(t) // "download a <language> voice" — don't mangle it through the wrong one
@@ -558,7 +618,9 @@ class VoiceGuide @Inject constructor(
         }
         // Track whether we actually got focus — a FAILED request means the media app never ducked
         // (Vela used to speak over full-volume audio and never know); GRANTED or DELAYED both hold.
-        focusHeld = am.requestAudioFocus(req) != AudioManager.AUDIOFOCUS_REQUEST_FAILED
+        val grant = am.requestAudioFocus(req)
+        focusHeld = grant != AudioManager.AUDIOFOCUS_REQUEST_FAILED
+        android.util.Log.d("VoiceGuide", "requestAudioFocus result=$grant focusHeld=$focusHeld")
     }
 
     private fun abandonFocus() {

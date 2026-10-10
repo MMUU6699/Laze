@@ -1503,4 +1503,24 @@
     <string name="backend_config_subtitle">Configure your Supabase endpoint for live reports and sync.</string>
     <string name="config_save_btn">Save Settings</string>
     <string name="config_saved">Settings Saved</string>
+
+    <string name="voice_health_dialog_title">Arabic Voice Guidance Setup</string>
+    <string name="voice_health_data_missing">The system text-to-speech engine needs Arabic voice data installed to announce turn-by-turn navigation and hazard alerts.</string>
+    <string name="voice_health_offline_missing">Arabic voice is available but requires an active internet connection. Please download offline voice data for reliable guidance.</string>
+    <string name="voice_health_not_supported">The active TTS engine does not support Arabic. Please install Google Speech Services or switch to a compatible voice engine.</string>
+    <string name="voice_health_no_engine">No Text-to-Speech engine found on this device. Please install Speech Services by Google.</string>
+    <string name="voice_health_init_failed">Failed to initialize the system speech engine. Please check TTS settings.</string>
+    <string name="voice_health_btn_install_data">Install Voice Data</string>
+    <string name="voice_health_btn_tts_settings">TTS Settings</string>
+    <string name="voice_health_btn_google_tts">Get Google TTS</string>
+    <string name="voice_health_btn_use_english">Guidance in English</string>
+    <string name="voice_health_btn_dismiss">Drive Without Voice</string>
+    <string name="settings_voice_health_card_title">Arabic Voice Status</string>
+    <string name="settings_voice_health_ready">Arabic voice is ready and works offline</string>
+    <string name="settings_voice_health_test">Test Voice</string>
+    <string name="settings_voice_health_fix">Fix Voice Setup</string>
+    <string name="onboarding_voice_ready_title">Arabic Voice Guidance Ready</string>
+    <string name="onboarding_voice_ready_desc">Voice navigation is ready and powered by your system speech engine.</string>
+    <string name="onboarding_voice_setup_needed">Arabic Voice Setup Needed</string>
+    <string name="onboarding_voice_setup_desc">To hear Arabic turn-by-turn directions, install Arabic voice data in your device speech settings.</string>
 </resources>
