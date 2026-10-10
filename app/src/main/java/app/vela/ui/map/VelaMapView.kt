@@ -9596,6 +9596,9 @@ private fun applyData(
                 app.vela.core.backend.RoadReportType.BREAKDOWN -> "#7B1FA2"
                 app.vela.core.backend.RoadReportType.FLOOD -> "#0288D1"
                 app.vela.core.backend.RoadReportType.SPEED_CAMERA -> "#3949AB"
+                app.vela.core.backend.RoadReportType.CHECKPOINT -> "#1976D2"
+                app.vela.core.backend.RoadReportType.SPEED_BUMP -> "#FFB300"
+                app.vela.core.backend.RoadReportType.POTHOLE -> "#8D6E63"
             }
             feature.addStringProperty("color", colorHex)
             feature

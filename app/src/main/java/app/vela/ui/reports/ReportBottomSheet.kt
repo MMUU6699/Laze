@@ -108,6 +108,24 @@ fun ReportBottomSheet(
                 titleRes = R.string.report_type_camera,
                 icon = Sym.Speed,
                 color = Color(0xFF3949AB)
+            ),
+            ReportCategoryItem(
+                type = RoadReportType.CHECKPOINT,
+                titleRes = R.string.report_type_checkpoint,
+                icon = Sym.Flag,
+                color = Color(0xFF1976D2)
+            ),
+            ReportCategoryItem(
+                type = RoadReportType.SPEED_BUMP,
+                titleRes = R.string.report_type_speed_bump,
+                icon = Sym.Speed,
+                color = Color(0xFFFFB300)
+            ),
+            ReportCategoryItem(
+                type = RoadReportType.POTHOLE,
+                titleRes = R.string.report_type_pothole,
+                icon = Sym.Warning,
+                color = Color(0xFF8D6E63)
             )
         )
     }

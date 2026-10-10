@@ -88,6 +88,20 @@ object CoreModule {
 
     @Provides
     @Singleton
+    fun trafficProbeRepository(
+        authRepository: app.vela.core.backend.AuthRepository
+    ): app.vela.core.backend.TrafficProbeRepository =
+        app.vela.core.backend.TrafficProbeRepository(authRepository)
+
+    @Provides
+    @Singleton
+    fun savedPlacesRepository(
+        authRepository: app.vela.core.backend.AuthRepository
+    ): app.vela.core.backend.SavedPlacesRepository =
+        app.vela.core.backend.SavedPlacesRepository(authRepository)
+
+    @Provides
+    @Singleton
     fun routingProvider(
         okHttpClient: OkHttpClient,
     ): app.vela.core.routing.RoutingProvider {

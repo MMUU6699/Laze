@@ -1443,6 +1443,9 @@
     <string name="report_type_breakdown">Breakdown</string>
     <string name="report_type_flood">Flooding</string>
     <string name="report_type_camera">Speed Camera</string>
+    <string name="report_type_checkpoint">Checkpoint</string>
+    <string name="report_type_speed_bump">Speed Bump</string>
+    <string name="report_type_pothole">Pothole</string>
     <string name="report_send">Send Report</string>
     <string name="report_submitting">Sending…</string>
     <string name="report_success">Report sent! Thanks for helping drivers.</string>

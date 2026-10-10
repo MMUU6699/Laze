@@ -56,7 +56,7 @@ class RegionCatalog @Inject constructor(
     private fun cacheFile(url: String) = java.io.File(context.filesDir, "catalog-${url.hashCode().toUInt()}.json")
 
     suspend fun manifest(manifestUrl: String): List<RoutingRegion> = withContext(Dispatchers.IO) {
-        runCatching {
+        val fetched = runCatching {
             val json = runCatching {
                 http.newCall(Request.Builder().url(manifestUrl).build()).execute()
                     .use { r -> if (!r.isSuccessful) error("HTTP ${r.code}"); r.body!!.string() }
@@ -74,5 +74,120 @@ class RegionCatalog @Inject constructor(
                 )
             }
         }.getOrDefault(emptyList())
+
+        if (fetched.isNotEmpty()) fetched else IRAQ_DEFAULT_REGIONS
+    }
+
+    companion object {
+        val IRAQ_DEFAULT_REGIONS = listOf(
+            RoutingRegion(
+                id = "iq-all",
+                name = "العراق (كامل المحافظات) / Iraq Complete",
+                url = "https://github.com/MMUU6699/Laze/releases/download/obf-regions/iraq.obf.zip",
+                sizeMb = 85,
+                s = 29.06, w = 38.79, n = 37.38, e = 48.63,
+                installedMb = 120,
+                rev = 1,
+            ),
+            RoutingRegion(
+                id = "iq-baghdad",
+                name = "بغداد / Baghdad",
+                url = "https://github.com/MMUU6699/Laze/releases/download/obf-regions/baghdad.obf.zip",
+                sizeMb = 24,
+                s = 32.88, w = 44.02, n = 33.72, e = 44.75,
+                installedMb = 35,
+                rev = 1,
+            ),
+            RoutingRegion(
+                id = "iq-erbil",
+                name = "أربيل (هەولێر) / Erbil",
+                url = "https://github.com/MMUU6699/Laze/releases/download/obf-regions/erbil.obf.zip",
+                sizeMb = 18,
+                s = 35.45, w = 43.25, n = 37.15, e = 45.15,
+                installedMb = 28,
+                rev = 1,
+            ),
+            RoutingRegion(
+                id = "iq-basra",
+                name = "البصرة / Basra",
+                url = "https://github.com/MMUU6699/Laze/releases/download/obf-regions/basra.obf.zip",
+                sizeMb = 16,
+                s = 29.75, w = 46.50, n = 31.40, e = 48.60,
+                installedMb = 24,
+                rev = 1,
+            ),
+            RoutingRegion(
+                id = "iq-sulaymaniyah",
+                name = "السليمانية (سلێمانی) / Sulaymaniyah",
+                url = "https://github.com/MMUU6699/Laze/releases/download/obf-regions/sulaymaniyah.obf.zip",
+                sizeMb = 15,
+                s = 34.90, w = 44.80, n = 36.40, e = 46.40,
+                installedMb = 22,
+                rev = 1,
+            ),
+            RoutingRegion(
+                id = "iq-najaf",
+                name = "النجف الأشرف / Najaf",
+                url = "https://github.com/MMUU6699/Laze/releases/download/obf-regions/najaf.obf.zip",
+                sizeMb = 12,
+                s = 30.40, w = 43.10, n = 32.35, e = 44.60,
+                installedMb = 18,
+                rev = 1,
+            ),
+            RoutingRegion(
+                id = "iq-karbala",
+                name = "كربلاء المقدسة / Karbala",
+                url = "https://github.com/MMUU6699/Laze/releases/download/obf-regions/karbala.obf.zip",
+                sizeMb = 10,
+                s = 32.10, w = 43.30, n = 32.85, e = 44.30,
+                installedMb = 15,
+                rev = 1,
+            ),
+            RoutingRegion(
+                id = "iq-nineveh",
+                name = "نينوى (الموصل) / Nineveh",
+                url = "https://github.com/MMUU6699/Laze/releases/download/obf-regions/nineveh.obf.zip",
+                sizeMb = 19,
+                s = 35.10, w = 41.20, n = 37.05, e = 43.60,
+                installedMb = 29,
+                rev = 1,
+            ),
+            RoutingRegion(
+                id = "iq-kirkuk",
+                name = "كركوك / Kirkuk",
+                url = "https://github.com/MMUU6699/Laze/releases/download/obf-regions/kirkuk.obf.zip",
+                sizeMb = 11,
+                s = 34.85, w = 43.40, n = 35.85, e = 44.85,
+                installedMb = 16,
+                rev = 1,
+            ),
+            RoutingRegion(
+                id = "iq-anbar",
+                name = "الأنبار / Anbar",
+                url = "https://github.com/MMUU6699/Laze/releases/download/obf-regions/anbar.obf.zip",
+                sizeMb = 17,
+                s = 31.10, w = 38.79, n = 35.15, e = 44.20,
+                installedMb = 25,
+                rev = 1,
+            ),
+            RoutingRegion(
+                id = "iq-dhi-qar",
+                name = "ذي قار (الناصرية) / Dhi Qar",
+                url = "https://github.com/MMUU6699/Laze/releases/download/obf-regions/dhi_qar.obf.zip",
+                sizeMb = 11,
+                s = 30.55, w = 45.60, n = 32.00, e = 47.25,
+                installedMb = 17,
+                rev = 1,
+            ),
+            RoutingRegion(
+                id = "iq-babil",
+                name = "بابل (الحلة) / Babylon",
+                url = "https://github.com/MMUU6699/Laze/releases/download/obf-regions/babil.obf.zip",
+                sizeMb = 12,
+                s = 32.15, w = 44.00, n = 33.05, e = 45.10,
+                installedMb = 18,
+                rev = 1,
+            ),
+        )
     }
 }

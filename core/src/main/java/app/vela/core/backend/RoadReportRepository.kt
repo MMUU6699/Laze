@@ -203,6 +203,9 @@ class RoadReportRepository(
                 RoadReportType.BREAKDOWN -> 45L
                 RoadReportType.FLOOD -> 90L
                 RoadReportType.SPEED_CAMERA -> 180L
+                RoadReportType.CHECKPOINT -> 120L
+                RoadReportType.SPEED_BUMP -> 1440L
+                RoadReportType.POTHOLE -> 720L
             }
             val expiresAt = now.plus(expirationMinutes, ChronoUnit.MINUTES).toString()
             val createdAt = now.toString()

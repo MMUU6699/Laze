@@ -235,5 +235,8 @@ class NavStringsTest {
         assertEquals("تنبيه على الطريق: ازدحام مروري", ar.hazardAlert(app.vela.core.backend.RoadReportType.TRAFFIC))
         assertEquals("تنبيه على الطريق: إغلاق طريق", ar.hazardAlert(app.vela.core.backend.RoadReportType.CLOSURE))
         assertEquals("تنبيه على الطريق: كاميرا سرعة", ar.hazardAlert(app.vela.core.backend.RoadReportType.SPEED_CAMERA))
+        assertEquals("تنبيه على الطريق: سيطرة / نقطة تفتيش", ar.hazardAlert(app.vela.core.backend.RoadReportType.CHECKPOINT))
+        assertEquals("تنبيه على الطريق: مطب صناعي", ar.hazardAlert(app.vela.core.backend.RoadReportType.SPEED_BUMP))
+        assertEquals("تنبيه على الطريق: حفرة أو تخسف", ar.hazardAlert(app.vela.core.backend.RoadReportType.POTHOLE))
     }
 }

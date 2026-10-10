@@ -30,7 +30,16 @@ enum class RoadReportType(val apiValue: String, val titleAr: String, val titleEn
     FLOOD("flood", "طريق مغمور بالمياه", "Flooding"),
 
     @SerialName("camera")
-    SPEED_CAMERA("camera", "كاميرا سرعة", "Speed Camera");
+    SPEED_CAMERA("camera", "كاميرا سرعة", "Speed Camera"),
+
+    @SerialName("checkpoint")
+    CHECKPOINT("checkpoint", "سيطرة / نقطة تفتيش", "Checkpoint"),
+
+    @SerialName("speed_bump")
+    SPEED_BUMP("speed_bump", "مطب صناعي", "Speed Bump"),
+
+    @SerialName("pothole")
+    POTHOLE("pothole", "حفرة أو تخسف", "Pothole");
 
     companion object {
         fun fromApi(value: String): RoadReportType = entries.firstOrNull {

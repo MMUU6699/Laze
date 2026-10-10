@@ -1332,6 +1332,9 @@
     <string name="report_type_breakdown">سيارة متعطلة</string>
     <string name="report_type_flood">طريق مغمور بالمياه</string>
     <string name="report_type_camera">كاميرا سرعة</string>
+    <string name="report_type_checkpoint">سيطرة / تفتيش</string>
+    <string name="report_type_speed_bump">مطب صناعي</string>
+    <string name="report_type_pothole">حفرة / تخسف</string>
     <string name="report_send">إرسال البلاغ</string>
     <string name="report_submitting">جارٍ الإرسال…</string>
     <string name="report_success">تم إرسال البلاغ! شكرًا لمساعدة السائقين الآخرين.</string>

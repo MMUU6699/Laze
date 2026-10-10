@@ -63,6 +63,10 @@ internal fun BoxScope.MapFloaters(state: MapUiState, vm: MapViewModel, sheet: Sh
             report = state.currentHazardAlert,
             distanceMeters = dist,
             onDismiss = { vm.dismissHazardAlert(state.currentHazardAlert.id) },
+            onConfirm = { isStillThere ->
+                vm.confirmRoadReport(state.currentHazardAlert.id, isStillThere)
+                vm.dismissHazardAlert(state.currentHazardAlert.id)
+            },
             modifier = Modifier.align(Alignment.TopCenter)
         )
     }

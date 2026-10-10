@@ -50,6 +50,9 @@ fun ReportDetailCard(
         RoadReportType.BREAKDOWN -> Color(0xFF7B1FA2) to Sym.DirectionsCar
         RoadReportType.FLOOD -> Color(0xFF0288D1) to Sym.DirectionsBoat
         RoadReportType.SPEED_CAMERA -> Color(0xFF3949AB) to Sym.Speed
+        RoadReportType.CHECKPOINT -> Color(0xFF1976D2) to Sym.Flag
+        RoadReportType.SPEED_BUMP -> Color(0xFFFFB300) to Sym.Speed
+        RoadReportType.POTHOLE -> Color(0xFF8D6E63) to Sym.Warning
     }
 
     Surface(

@@ -80,6 +80,9 @@ class RoadReportTest {
         assertEquals(RoadReportType.ACCIDENT, RoadReportType.fromApi("accident"))
         assertEquals(RoadReportType.SPEED_CAMERA, RoadReportType.fromApi("camera"))
         assertEquals(RoadReportType.CLOSURE, RoadReportType.fromApi("closure"))
+        assertEquals(RoadReportType.CHECKPOINT, RoadReportType.fromApi("checkpoint"))
+        assertEquals(RoadReportType.SPEED_BUMP, RoadReportType.fromApi("speed_bump"))
+        assertEquals(RoadReportType.POTHOLE, RoadReportType.fromApi("pothole"))
         assertEquals(RoadReportType.HAZARD, RoadReportType.fromApi("unknown_type"))
 
         assertEquals(RoadReportSeverity.SEVERE, RoadReportSeverity.fromApi("severe"))

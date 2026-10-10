@@ -526,6 +526,8 @@ class MapViewModel @Inject constructor(
     private val asrRecognizer: app.vela.voice.AsrRecognizer,
     private val authRepository: app.vela.core.backend.AuthRepository,
     private val roadReportRepository: app.vela.core.backend.RoadReportRepository,
+    private val trafficProbeRepository: app.vela.core.backend.TrafficProbeRepository,
+    private val savedPlacesRepository: app.vela.core.backend.SavedPlacesRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MapUiState())
@@ -607,6 +609,7 @@ class MapViewModel @Inject constructor(
                 when (authState) {
                     is app.vela.core.backend.AuthState.Authenticated -> {
                         _state.update { it.copy(authProfile = authState.profile, isGuestUser = false) }
+                        syncSavedPlacesWithCloud()
                     }
                     is app.vela.core.backend.AuthState.Unauthenticated -> {
                         _state.update { it.copy(authProfile = null, isGuestUser = false) }
@@ -618,6 +621,7 @@ class MapViewModel @Inject constructor(
                 }
             }
         }
+        syncSavedPlacesWithCloud()
         // Laze: Observe Road Reports
         viewModelScope.launch {
             roadReportRepository.reports.collect { reportsList ->
@@ -1215,6 +1219,19 @@ class MapViewModel @Inject constructor(
                     nav.recordDriveFix(here)
                     updateSpeedLimit(here) // posted-limit badge for the road under the puck (off-thread)
                     if (_state.value.navStarved) _state.update { it.copy(navStarved = false) }
+
+                    // Laze: Crowdsourced anonymous probe telemetry
+                    val speedKmh = (speed?.toDouble() ?: 0.0) * 3.6
+                    if (_state.value.navigating && speedKmh >= 3.0) {
+                        viewModelScope.launch {
+                            trafficProbeRepository.sendProbe(
+                                latitude = here.lat,
+                                longitude = here.lng,
+                                speedKmh = speedKmh,
+                                bearing = fixBearing?.toDouble(),
+                            )
+                        }
+                    }
                 } else if (_state.value.navigating && nowMs - nav.lastNavFedMs > NAV_STARVED_MS && !_state.value.navStarved) {
                     _state.update { it.copy(navStarved = true) }
                 }
@@ -2052,6 +2069,7 @@ class MapViewModel @Inject constructor(
                 status = appContext.getString(R.string.mapvm_shortcut_set, kind.label, sp.name),
             )
         }
+        syncSavedPlacesWithCloud()
         return true
     }
 
@@ -2066,6 +2084,7 @@ class MapViewModel @Inject constructor(
         _state.update {
             it.copy(home = shortcutStore.get(ShortcutKind.HOME), work = shortcutStore.get(ShortcutKind.WORK))
         }
+        syncSavedPlacesWithCloud()
     }
 
     /** Pin the currently-open place straight to Home/Work from its sheet. */
@@ -2083,12 +2102,14 @@ class MapViewModel @Inject constructor(
                 status = appContext.getString(R.string.mapvm_shortcut_set, kind.label, sp.name),
             )
         }
+        syncSavedPlacesWithCloud()
     }
 
     /** Remove a place from the saved list (toggle removes an existing entry). */
     fun removeSaved(sp: SavedPlace) {
         savedStore.toggle(sp)
         _state.update { it.copy(saved = savedStore.saved()) }
+        syncSavedPlacesWithCloud()
     }
 
     /** Rename a saved place (issue #434). The open sheet follows if it is showing that place. */
@@ -2101,6 +2122,7 @@ class MapViewModel @Inject constructor(
                 selected = it.selected?.let { p -> if (p.id == sp.id) p.copy(name = trimmed) else p },
             )
         }
+        syncSavedPlacesWithCloud()
     }
 
     fun toggleSave() {
@@ -2110,6 +2132,69 @@ class MapViewModel @Inject constructor(
         // its id (SavedPlace.awaitsListing): that one is looked up when it is next opened online.
         savedStore.toggle(SavedPlace.of(p).copy(bare = !p.isListing()))
         _state.update { it.copy(saved = savedStore.saved()) }
+        syncSavedPlacesWithCloud()
+    }
+
+    fun syncSavedPlacesWithCloud() {
+        viewModelScope.launch {
+            if (authRepository.getCurrentProfile() != null) {
+                savedPlacesRepository.syncLocalPlaces(
+                    favorites = savedStore.saved(),
+                    home = shortcutStore.get(ShortcutKind.HOME),
+                    work = shortcutStore.get(ShortcutKind.WORK),
+                )
+                val remote = savedPlacesRepository.getSavedPlaces()
+                if (remote.isNotEmpty()) {
+                    for (rp in remote) {
+                        when (rp.type) {
+                            "home" -> {
+                                if (shortcutStore.get(ShortcutKind.HOME) == null) {
+                                    val sp = SavedPlace(
+                                        id = rp.id ?: "home",
+                                        name = rp.name,
+                                        lat = rp.latitude,
+                                        lng = rp.longitude,
+                                        address = rp.address,
+                                    )
+                                    shortcutStore.set(ShortcutKind.HOME, sp)
+                                }
+                            }
+                            "work" -> {
+                                if (shortcutStore.get(ShortcutKind.WORK) == null) {
+                                    val sp = SavedPlace(
+                                        id = rp.id ?: "work",
+                                        name = rp.name,
+                                        lat = rp.latitude,
+                                        lng = rp.longitude,
+                                        address = rp.address,
+                                    )
+                                    shortcutStore.set(ShortcutKind.WORK, sp)
+                                }
+                            }
+                            else -> {
+                                val sp = SavedPlace(
+                                    id = rp.id ?: "${rp.latitude},${rp.longitude}",
+                                    name = rp.name,
+                                    lat = rp.latitude,
+                                    lng = rp.longitude,
+                                    address = rp.address,
+                                )
+                                if (!savedStore.isSaved(sp.id)) {
+                                    savedStore.toggle(sp)
+                                }
+                            }
+                        }
+                    }
+                    _state.update {
+                        it.copy(
+                            saved = savedStore.saved(),
+                            home = shortcutStore.get(ShortcutKind.HOME),
+                            work = shortcutStore.get(ShortcutKind.WORK),
+                        )
+                    }
+                }
+            }
+        }
     }
 
     fun selectSaved(sp: SavedPlace) {
