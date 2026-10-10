@@ -1719,7 +1719,11 @@ fun MapScreen(
         // Re-center pill takes the speed box's corner until the camera is back.
         val navAway = state.navigating && !state.showSteps && !state.editingStops && state.results.isEmpty() &&
             (state.navCameraDetached || state.previewStepIndex != null || navZoomOverride)
-        NavCorner(state, navAway, movingFree, postedLimitKmh, landscapeChrome, navBarClearance, chromeLift, onRecenter = { vm.recenterNav(); navRecenterTick++ })
+        NavCorner(
+            state, navAway, movingFree, postedLimitKmh, landscapeChrome, navBarClearance, chromeLift,
+            onRecenter = { vm.recenterNav(); navRecenterTick++ },
+            onOpenReport = { vm.openReportSheet() },
+        )
 
         if (!state.navigating && state.showSearchThisArea && state.selected == null && !searchOpen && !resultsShown) {
             ElevatedButton(
@@ -2945,32 +2949,46 @@ private fun BoxScope.NavCorner(
     navBarClearance: androidx.compose.ui.unit.Dp,
     chromeLift: androidx.compose.ui.unit.Dp,
     onRecenter: () -> Unit,
+    onOpenReport: () -> Unit,
 ) {
     // Landscape drive: both sit in line with the bottom bar, just to its right.
     val beside = state.navigating && landscapeChrome
     val besideStart = with(LocalDensity.current) { navBarRightPx.intValue.toDp() } + 10.dp
-    if (navAway) app.vela.ui.nav.NavRecenterPill(
-        onClick = onRecenter,
-        modifier = Modifier.align(Alignment.BottomStart).navigationBarsPadding()
-            .padding(start = if (landscapeChrome) besideStart else 16.dp, bottom = if (landscapeChrome) 16.dp else navBarClearance),
-    )
-    if (!navAway && app.vela.ui.SpeedDisplay.on.value && (((state.navigating && !state.showSteps && !state.editingStops) && state.mySpeed != null) || movingFree)) {
-        SpeedWidget(
-            speedMps = state.mySpeed,
-            limitKmh = postedLimitKmh,
-            imperial = Units.imperial.value,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .navigationBarsPadding()
-                // During nav the box clears the ETA bar; free-driving there is no bar, so it
-                // sits low in the corner, level with the locate FAB (user 2026-07-14). The
-                // scale bar yields the spot while the box is there.
-                .padding(
-                    start = if (beside) besideStart else 16.dp,
-                    bottom = if (beside) 16.dp else if (state.navigating) navBarClearance else 16.dp + chromeLift,
-                )
-                .popIn(),
-        )
+    val showSpeed = !navAway && app.vela.ui.SpeedDisplay.on.value &&
+        (((state.navigating && !state.showSteps && !state.editingStops) && state.mySpeed != null) || movingFree)
+    val showReport = (state.navigating || movingFree) && !state.searching && state.streetView == null &&
+        !state.showSteps && !state.editingStops
+
+    if (!navAway && !showSpeed && !showReport) return
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.Start,
+        modifier = Modifier
+            .align(Alignment.BottomStart)
+            .navigationBarsPadding()
+            .padding(
+                start = if (landscapeChrome && beside) besideStart else 16.dp,
+                bottom = if (beside) 16.dp else if (state.navigating) navBarClearance else 16.dp + chromeLift,
+            )
+    ) {
+        if (showReport) {
+            app.vela.ui.reports.ReportFab(
+                onClick = onOpenReport,
+            )
+        }
+        if (navAway) {
+            app.vela.ui.nav.NavRecenterPill(
+                onClick = onRecenter,
+            )
+        } else if (showSpeed) {
+            SpeedWidget(
+                speedMps = state.mySpeed,
+                limitKmh = postedLimitKmh,
+                imperial = Units.imperial.value,
+                modifier = Modifier.popIn(),
+            )
+        }
     }
 }
 

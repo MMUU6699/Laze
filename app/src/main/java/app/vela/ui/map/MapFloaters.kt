@@ -67,22 +67,6 @@ internal fun BoxScope.MapFloaters(state: MapUiState, vm: MapViewModel, sheet: Sh
         )
     }
 
-    // Laze Quick Report FAB (visible ONLY during active navigation)
-    if (state.navigating && !state.searching && state.streetView == null) {
-        val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
-        app.vela.ui.reports.ReportFab(
-            onClick = { vm.openReportSheet() },
-            modifier = Modifier
-                .align(if (isRtl) Alignment.BottomStart else Alignment.BottomEnd)
-                .navigationBarsPadding()
-                .padding(
-                    bottom = 124.dp,
-                    start = 16.dp,
-                    end = 16.dp
-                )
-        )
-    }
-
     // Laze Report Bottom Sheet
     if (state.showReportSheet) {
         app.vela.ui.reports.ReportBottomSheet(
