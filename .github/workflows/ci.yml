@@ -115,7 +115,7 @@ jobs:
           test "$(stat -c%s core/libs/kxml2-vela.jar)" -gt 10000
 
       - name: Unit tests
-        run: ./gradlew :core:test --no-daemon
+        run: ./gradlew :core:testDebugUnitTest :app:testDebugUnitTest --no-daemon
 
       - name: Check translations
         # Android lint's MissingTranslation doesn't run on assemble/test, so a missed locale
@@ -185,19 +185,22 @@ jobs:
       - name: Build release APK
         env:
           VELA_KEYSTORE_PATH: ${{ runner.temp }}/vela-release.jks
-          VELA_KEYSTORE_PASSWORD: ${{ secrets.VELA_KEYSTORE_PASSWORD }}
-          VELA_KEY_ALIAS: ${{ secrets.VELA_KEY_ALIAS }}
+          VELA_KEYSTORE_PASSWORD: ${{ secrets.VELA_KEYSTORE_PASSWORD || secrets.LAZE_KEYSTORE_PASSWORD }}
+          VELA_KEY_ALIAS: ${{ secrets.VELA_KEY_ALIAS || secrets.LAZE_KEY_ALIAS }}
         run: >
           ./gradlew :app:assembleRelease --no-daemon
           -PappVersionName=${{ steps.ver.outputs.name }}
           -PappVersionCode=${{ steps.ver.outputs.code }}
           -PmaptilerKey=${{ secrets.MAPTILER_KEY }}
+          -PmapboxToken=${{ secrets.MAPBOX_TOKEN }}
+          -PsupabaseUrl=${{ secrets.SUPABASE_URL }}
+          -PsupabaseAnonKey=${{ secrets.SUPABASE_ANON_KEY }}
           ${{ vars.ABI_SPLITS == 'true' && '-PabiSplits' || '' }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: vela-maps-apk
+          name: laze-release-apk
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 

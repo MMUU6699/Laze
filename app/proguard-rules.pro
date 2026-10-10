@@ -35,7 +35,14 @@
 -keep class app.vela.core.backend.** { *; }
 -keepnames class app.vela.core.backend.** { *; }
 
+# Laze Routing, Geocoding, Tiles & Normalization
+-keep class app.vela.core.routing.** { *; }
+-keep class app.vela.core.geocoding.** { *; }
+-keep class app.vela.core.tiles.** { *; }
+-keep class app.vela.core.util.ArabicSearchNormalizer { *; }
+
 # OsmAnd shaded / Vector tile / Commons logging
 -dontwarn org.apache.commons.logging.**
 -dontwarn com.vividsolutions.jts.**
 -dontwarn com.wdtinc.mapbox_vector_tile.**
+
