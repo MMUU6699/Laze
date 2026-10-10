@@ -78,6 +78,18 @@ class MainActivity : ComponentActivity() {
         // After the intent, before the map exists: a link keeps the camera, anything else opens
         // on the view chosen in Settings > Map.
         vm.openStartView()
+        if (BuildConfig.DEBUG) {
+            val pendingCrashes = app.vela.diag.CrashCatcher.pending(this)
+            if (pendingCrashes.isNotEmpty()) {
+                val latest = pendingCrashes.last()
+                val snippet = runCatching { latest.readText().lines().take(10).joinToString("\n") }.getOrDefault("")
+                android.util.Log.e("LazeCrash", "Previous crash detected:\n$snippet")
+                lifecycleScope.launch {
+                    kotlinx.coroutines.delay(1500L)
+                    vm.showStatus("تنبيه: تم رصد تقرير انهيار سابق (${latest.name})")
+                }
+            }
+        }
         setContent {
             // Read the theme at the call site (a recomposing scope) and pass it in
             // — reading it inside VelaTheme's default arg didn't reliably invalidate

@@ -65,6 +65,8 @@ class VelaApp : Application(), coil.ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        // Uncaught exception crash catcher: persists crash report to disk so crashes can be inspected on next boot
+        CrashCatcher.install(this) { runCatching { diag.snapshot() }.getOrDefault(emptyList()) }
         // Device memory class first: the Coil cap and the eager-warm decisions read it.
         app.vela.ui.MemoryPressure.init(this)
         app.vela.ui.SpeechPreload.init(this) // after MemoryPressure: its default reads the RAM tier

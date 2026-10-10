@@ -22,3 +22,20 @@
 -keepclassmembers class <1> {
     static <1>$Companion Companion;
 }
+
+# Supabase Kotlin SDK
+-keep class io.github.jan.supabase.** { *; }
+-dontwarn io.github.jan.supabase.**
+
+# Ktor HTTP client
+-keep class io.ktor.** { *; }
+-dontwarn io.ktor.**
+
+# Laze Backend & Database Models
+-keep class app.vela.core.backend.** { *; }
+-keepnames class app.vela.core.backend.** { *; }
+
+# OsmAnd shaded / Vector tile / Commons logging
+-dontwarn org.apache.commons.logging.**
+-dontwarn com.vividsolutions.jts.**
+-dontwarn com.wdtinc.mapbox_vector_tile.**
