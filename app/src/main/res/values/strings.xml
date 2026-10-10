@@ -64,7 +64,7 @@
     <string name="settings_voice_none_hint">No voice yet. Open Voice library below to download a natural on-device voice (no account, real-time even on old phones). A system TTS engine you install will also appear here to pick.</string>
     <string name="settings_voice_test">Test voice</string>
     <string name="settings_voice_system_settings">System voice settings</string>
-    <string name="settings_voice_test_hint">Tap Test voice to hear it. The Vela Voice is recommended; you can override to any installed text-to-speech engine.</string>
+    <string name="settings_voice_test_hint">Tap Test voice to hear it. The Laze Voice is recommended; you can override to any installed text-to-speech engine.</string>
     <string name="settings_voice_library">Voice library</string>
     <string name="settings_voice_advanced">Advanced voice options</string>
     <string name="settings_voice_try_label">Try the voice on any text</string>
@@ -87,8 +87,8 @@
     <string name="settings_vibrate_hint">Direction-coded buzzes at each turn, distinct for left vs right, so you can follow a route by feel. Set it per travel mode (e.g. on for cycling and walking, off while driving).</string>
     <string name="settings_keep_screen_on">Keep screen on while navigating</string>
     <string name="settings_keep_screen_on_hint">Keeps the screen awake during turn-by-turn.</string>
-    <string name="map_voice_downloading">Downloading Vela Voice · %1$d%%</string>
-    <string name="map_voice_installing">Installing Vela Voice…</string>
+    <string name="map_voice_downloading">Downloading Laze Voice · %1$d%%</string>
+    <string name="map_voice_installing">Installing Laze Voice…</string>
     <string name="map_region_downloading">Downloading %1$s routing · %2$d%%</string> <!-- format -->
     <string name="map_region_places_downloading">Saving %1$s places for offline search · %2$d%%</string> <!-- format -->
     <string name="map_region_placesfile_downloading">Saving %1$s places for the map · %2$d%%</string> <!-- format -->
@@ -171,8 +171,8 @@
     <string name="settings_nav_trace_hint">Records how the map camera moves while you navigate, so a jittery or swimming map can be diagnosed. Contains no location data, only headings, speeds and timings, so it is safe to attach to a bug report.</string>
     <string name="settings_nav_trace_export">Share nav trace</string>
     <string name="settings_nav_trace_empty">No trace recorded yet. Navigate somewhere first.</string>
-    <string name="settings_voice_vela_name">Vela voice (%1$s)</string> <!-- format -->
-    <string name="settings_voice_install_vela">Install the Vela voice (%1$d MB)</string> <!-- format -->
+    <string name="settings_voice_vela_name">Laze voice (%1$s)</string> <!-- format -->
+    <string name="settings_voice_install_vela">Install the Laze voice (%1$d MB)</string> <!-- format -->
     <string name="settings_voice_install_vela_hint">The recommended navigation voice. Reinstall it here any time it goes missing or a download failed.</string>
     <string name="settings_texture_render">Compatibility rendering</string>
     <string name="settings_texture_render_hint">Draws the map through a compatibility path that avoids some devices\' graphics driver bugs. Turns itself on if the map crashed the app at startup. Slightly slower; needs an app restart to apply.</string>
@@ -240,7 +240,7 @@
     <string name="settings_link_action_place">Show the place</string>
     <string name="settings_link_action_directions">Open directions</string>
     <string name="settings_link_action_start">Start navigation</string>
-    <string name="settings_link_action_hint">What happens when another app hands Vela a location. Start navigation suits delivery apps that send one stop after another.</string>
+    <string name="settings_link_action_hint">What happens when another app hands Laze a location. Start navigation suits delivery apps that send one stop after another.</string>
     <string name="settings_confirm_end_nav">Ask before ending navigation</string>
     <string name="settings_confirm_end_nav_hint">Back during a drive always asks first. With this on, the red X asks too</string>
     <string name="nav_end_confirm_title">End navigation?</string>
@@ -249,7 +249,7 @@
     <string name="nav_end_confirm_keep">Keep going</string>
     <string name="settings_parking_button">Parking button</string>
     <string name="settings_parking_button_hint">The P button on the map that saves where you parked. Off: it shows only while a spot is saved.</string>
-    <string name="map_layers_places">Place icons: %1$s</string> <!-- format: %1$s is a source, "Vela data", "Google" or "Both" -->
+    <string name="map_layers_places">Place icons: %1$s</string> <!-- format: %1$s is a source, "Laze data", "Google" or "Both" -->
     <string name="settings_two_finger_tilt">Tilt with two fingers</string>
     <string name="settings_two_finger_tilt_hint">Drag two fingers up or down to tilt the map into 3D. Off: a pinch only ever zooms.</string>
     <string name="settings_keep_north_up">Keep north up</string>
@@ -259,8 +259,8 @@
     <string name="settings_start_view_last">Where I left the map</string>
     <string name="settings_start_view_place">A place I choose</string>
     <string name="settings_start_view_use_current">Use the current map view</string>
-    <string name="settings_start_view_hint">Where the map is when you start Vela. A link from another app still opens on its own place.</string>
-    <string name="settings_start_view_saved">Vela will open on this view.</string>
+    <string name="settings_start_view_hint">Where the map is when you start Laze. A link from another app still opens on its own place.</string>
+    <string name="settings_start_view_saved">Laze will open on this view.</string>
     <string name="settings_speed_display">Show speed and speed limit</string>
     <string name="settings_speed_display_hint">Your speed and the posted limit while driving, on the phone and on the car screen</string>
     <string name="mapvm_area_pack_big">Offline search here uses the place pack for all of %1$s. Get it from Settings > Offline maps.</string> <!-- format: %1$s country or state name -->
@@ -302,7 +302,7 @@
     <string name="settings_saved_places_hint">Back up your starred places to a file, or restore them on another device. Import merges into what you already have. It never overwrites or removes anything, and it also reads GPX, KML and GeoJSON files exported from other map apps.</string>
     <string name="settings_import_nothing_new">Everything in that file is already saved.</string>
     <string name="settings_import_unreadable">That file could not be opened.</string>
-    <string name="settings_import_wrong_format">No places found in that file. Vela reads its own exports, and GPX, KML or GeoJSON files saved from other map apps.</string>
+    <string name="settings_import_wrong_format">No places found in that file. Laze reads its own exports, and GPX, KML or GeoJSON files saved from other map apps.</string>
     <string name="settings_import_wrong_format_named">No places found in that %1$s file.</string> <!-- format -->
     <string name="settings_import_no_picker">No file picker is available on this device, so a file cannot be chosen.</string>
     <string name="settings_no_saved_places">No saved places yet</string>
@@ -319,7 +319,7 @@
     <string name="settings_show_pois">Show places</string>
     <string name="settings_show_pois_hint">Business and place icons on the browse map. Off = a clean map; searched places still show.</string>
     <string name="settings_places_source">Place icons on the map</string>
-    <string name="settings_places_source_open">Vela data</string>
+    <string name="settings_places_source_open">Laze data</string>
     <string name="settings_places_source_google">Google</string>
     <string name="settings_places_source_both">Both</string>
     <string name="settings_places_source_open_hint">Icons come from Vela\'s own data. Panning never contacts Google, and it works offline.</string>
@@ -395,7 +395,7 @@
     <string name="settings_google_free">Use Vela without Google</string>
     <string name="settings_google_free_hint">Nothing is sent to Google. Search uses OpenStreetMap and your downloaded regions, places on the map come from Vela\'s own data, and routes come from the open router with no live traffic. You lose reviews, photos, Google\'s opening hours, live arrival times, Street View and the satellite close-ups. Transit directions come from the open planner. Downloaded regions still work fully offline.</string>
     <string name="settings_diagnostics">Diagnostics</string>
-    <string name="settings_diagnostics_hint">Off by default. When on, Vela keeps a short local log you can export and hand to a developer. Nothing is uploaded, and turning it off wipes the log.</string>
+    <string name="settings_diagnostics_hint">Off by default. When on, Laze keeps a short local log you can export and hand to a developer. Nothing is uploaded, and turning it off wipes the log.</string>
     <string name="settings_share_diagnostics">Share diagnostics</string>
     <string name="settings_diag_nothing">Nothing recorded yet. Use the app, then export.</string>
     <string name="settings_diag_export">Export debug session</string>
@@ -438,16 +438,16 @@
     <string name="settings_trip_batch_none">Every selected trip is shorter than the trim distance, so there is nothing left to share. Try a smaller one.</string>
     <string name="settings_trip_batch_confirm">Share zip</string>
     <string name="settings_name_trips">Name each trip when it is saved</string>
-    <string name="settings_name_trips_hint">After a recorded drive ends, Vela asks what to call it. Off by default; you can always rename a trip later in the list below.</string>
+    <string name="settings_name_trips_hint">After a recorded drive ends, Laze asks what to call it. Off by default; you can always rename a trip later in the list below.</string>
     <string name="trip_name_prompt_title">Name this drive</string>
     <string name="trip_name_prompt_save">Save name</string>
     <string name="trip_name_prompt_skip">Not now</string>
     <string name="settings_no_trips_hint">No trips recorded yet. Navigate somewhere with this on and it\'ll show up here to replay.</string>
     <string name="settings_trip_consent_title">Save your trips?</string>
-    <string name="settings_trip_consent_body">Vela will record the GPS trace of each navigation on this phone, so a drive can be replayed for testing without driving it again. This is more revealing than diagnostics (it captures your exact routes) but it stays on the phone and is never uploaded. Turn it off any time.</string>
+    <string name="settings_trip_consent_body">Laze will record the GPS trace of each navigation on this phone, so a drive can be replayed for testing without driving it again. This is more revealing than diagnostics (it captures your exact routes) but it stays on the phone and is never uploaded. Turn it off any time.</string>
     <string name="settings_turn_on">Turn on</string>
     <string name="settings_cancel">Cancel</string>
-    <string name="settings_crash_hint">Vela closed unexpectedly recently. Sending the crash report (stack trace) helps fix it. It\'s a plain text file, no personal data.</string>
+    <string name="settings_crash_hint">Laze closed unexpectedly recently. Sending the crash report (stack trace) helps fix it. It\'s a plain text file, no personal data.</string>
     <string name="settings_crash_export">Export crash report</string>
     <string name="settings_crash_discard">Discard</string>
     <string name="settings_crash_diag_offer">Diagnostics is off, so nothing was recorded leading up to this. Turn it on to capture more detail if it happens again.</string>
@@ -477,7 +477,7 @@
     <string name="settings_voice_show_less">Show less</string>
     <string name="settings_voice_this_voice">this voice</string>
     <string name="settings_voice_remove_title">Remove %1$s?</string> <!-- format -->
-    <string name="settings_voice_remove_body">This is your only Vela Voice. Spoken directions fall back to a system text-to-speech engine (or go silent if none is installed) until you download another.</string>
+    <string name="settings_voice_remove_body">This is your only Laze Voice. Spoken directions fall back to a system text-to-speech engine (or go silent if none is installed) until you download another.</string>
     <string name="settings_voice_remove">Remove</string>
     <string name="settings_voice_gender_female">Female</string>
     <string name="settings_voice_gender_male">Male</string>
@@ -711,7 +711,7 @@
     <string name="root_voice_body_intro">Vela\'s own voice runs entirely on your phone: natural spoken directions, no account, no extra app. Recommended, a one-time %1$d MB download.</string>
     <string name="root_voice_body_system">Prefer not to? Use a voice already on your phone.</string>
     <string name="root_voice_body_outro">Change it any time in Settings → Voice.</string>
-    <string name="root_voice_download">Download Vela Voice</string>
+    <string name="root_voice_download">Download Laze Voice</string>
     <string name="root_voice_use_system">Use system voice</string>
 
     <!-- nav: NavOverlays.kt -->
@@ -749,7 +749,7 @@
     <string name="welcome_get_started">Get started</string>
     <string name="welcome_continue">Continue</string>
     <string name="welcome_cameras_title">Plate cameras</string>
-    <string name="welcome_cameras_intro">Flock and other license plate readers show on the map. Vela can also:</string>
+    <string name="welcome_cameras_intro">Flock and other license plate readers show on the map. Laze can also:</string>
     <string name="welcome_cameras_avoid">Route around them</string>
     <string name="welcome_cameras_warn">Warn me as I get close</string>
     <string name="welcome_google_customize">Choose what Google is used for</string>
@@ -767,9 +767,9 @@
     <string name="settings_whatsnew">What\'s new in this version</string>
     <string name="settings_whatsnew_hint">The release notes for the build you are on.</string>
     <string name="whatsnew_show_after_updates">Show what\'s new after updates</string>
-    <string name="welcome_donate_title">Enjoying Vela?</string>
+    <string name="welcome_donate_title">Enjoying Laze?</string>
     <string name="welcome_donate_body">Vela is free and ad-free, built on a shoestring. If it\'s become useful, a small one-off donation helps keep it going. Entirely optional, and this is the only time it\'ll ask. There\'s always a Support entry in Settings too.</string>
-    <string name="welcome_donate_confirm">Support Vela</string>
+    <string name="welcome_donate_confirm">Support Laze</string>
     <string name="welcome_donate_dismiss">Maybe later</string>
 
     <!-- search: SearchBar.kt -->
@@ -816,7 +816,7 @@
     <string name="settings_spoken_detail_exits">Highway exits only</string>
     <string name="settings_spoken_detail_hint">Brief says each turn once, without the street name. Highway exits only stays quiet in town and speaks for exits, forks and turns taken at speed.</string>
     <string name="mapvm_voice_lang_missing">Spoken directions need a %1$s voice. Get one in Settings → Voice</string>
-    <!-- Shown when the language has no bundled Vela voice (e.g. Japanese) AND the phone has no
+    <!-- Shown when the language has no bundled Laze voice (e.g. Japanese) AND the phone has no
          system voice for it either, so we point at the phone's own voice settings instead. -->
     <string name="mapvm_voice_lang_system">%1$s directions use your phone\'s voice. Add one in your system voice settings.</string>
     <string name="mapvm_resume_waiting_gps">Waiting for GPS to resume navigation…</string>

@@ -122,7 +122,9 @@ jobs:
         # backfill ships silently (English shown for that key). Fail fast if any translatable
         # string is absent from a locale or its placeholders drifted. Intentionally-English-only
         # strings are marked translatable="false" in res/values/strings.xml and skipped.
-        run: python3 tools/check-translations.py
+        run: |
+          python3 tools/check-translations.py
+          python3 tools/audit-strings.py
 
       - name: D-pad audit
         # Every control has a focus ring and every gesture a key path (docs/dpad.md). Reads the
