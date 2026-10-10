@@ -46,7 +46,7 @@ class NamingStudyTest {
         val per = System.getProperty("velaStudy")?.toIntOrNull()
         Assume.assumeTrue("set -DvelaStudy=<routes per area>", per != null)
         val http = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
-        val ua = "VelaMaps-naming-study (github.com/PimpinPumpkin/Vela)"
+        val ua = "LazeMaps-naming-study (github.com/MMUU6699/Laze)"
         fun get(url: String): ByteArray? = runCatching {
             http.newCall(Request.Builder().url(url).header("User-Agent", ua).build()).execute().use { r -> if (r.isSuccessful) r.body?.bytes() else null }
         }.getOrNull()

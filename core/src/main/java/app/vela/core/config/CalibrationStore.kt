@@ -229,8 +229,8 @@ class CalibrationStore @Inject constructor(
         var latest: Calibration = Calibration.DEFAULT
             private set
 
-        private const val REMOTE_URL = "https://raw.githubusercontent.com/PimpinPumpkin/Vela/main/calibration.json"
-        private const val SIG_URL = "https://raw.githubusercontent.com/PimpinPumpkin/Vela/main/calibration.json.sig"
+        private const val REMOTE_URL = "https://raw.githubusercontent.com/MMUU6699/Laze/main/calibration.json"
+        private const val SIG_URL = "https://raw.githubusercontent.com/MMUU6699/Laze/main/calibration.json.sig"
         private val ALLOWED_HOSTS = setOf("www.google.com", "google.com")
 
         // EC P-256 public key (SPKI, base64) — the private half lives only in

@@ -85,8 +85,8 @@ object WhatsNew {
 
     /** The release page for this build: the version tag, or the rolling canary release. */
     fun releaseUrl(): String =
-        if (BuildConfig.VERSION_NAME.endsWith("-canary")) "https://github.com/PimpinPumpkin/Vela/releases/tag/canary"
-        else "https://github.com/PimpinPumpkin/Vela/releases/tag/v${BuildConfig.VERSION_NAME}"
+        if (BuildConfig.VERSION_NAME.endsWith("-canary")) "https://github.com/MMUU6699/Laze/releases/tag/canary"
+        else "https://github.com/MMUU6699/Laze/releases/tag/v${BuildConfig.VERSION_NAME}"
 
     fun openRelease(context: Context) {
         try {
@@ -99,7 +99,7 @@ object WhatsNew {
     private fun fetchNotes(): String? = runCatching {
         val tag = if (BuildConfig.VERSION_NAME.endsWith("-canary")) "canary" else "v${BuildConfig.VERSION_NAME}"
         val req = Request.Builder()
-            .url("https://api.github.com/repos/PimpinPumpkin/Vela/releases/tags/$tag")
+            .url("https://api.github.com/repos/MMUU6699/Laze/releases/tags/$tag")
             .header("Accept", "application/vnd.github+json")
             .build()
         http.newCall(req).execute().use { resp ->

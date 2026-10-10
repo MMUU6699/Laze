@@ -190,7 +190,7 @@ private fun GoogleChoice(
     onContinue: (useGoogle: Boolean) -> Unit,
     onCustomize: () -> Unit,
 ) {
-    var useGoogle by rememberSaveable { mutableStateOf(true) }
+    var useGoogle by rememberSaveable { mutableStateOf(false) }
     val scroll = rememberScrollState()
     val minH = LocalConfiguration.current.screenHeightDp.dp
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {

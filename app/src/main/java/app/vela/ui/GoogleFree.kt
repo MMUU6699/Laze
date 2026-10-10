@@ -26,7 +26,7 @@ object GoogleFree {
 
     fun init(context: Context) {
         resolveLinks.value = prefs(context).getBoolean(KEY_LINKS, true)
-        on.value = prefs(context).getBoolean(KEY, false)
+        on.value = prefs(context).getBoolean(KEY, true)
         app.vela.core.data.NoGoogle.enabled = on.value
     }
 

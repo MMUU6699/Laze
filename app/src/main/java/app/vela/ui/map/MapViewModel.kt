@@ -10469,8 +10469,8 @@ class MapViewModel @Inject constructor(
         /** How long an informational heads-up card stays before dismissing itself. */
         const val CLOSED_OPEN_PLACES_CAP = 2000
         const val STATUS_AUTO_MS = 10_000L
-        /** A tapped offline globe probes Vela's own config host (no Google contact). */
-        const val CONNECTIVITY_PROBE_URL = "https://raw.githubusercontent.com/PimpinPumpkin/Vela/main/calibration.json"
+        /** A tapped offline globe probes Laze's own config host (no Google contact). */
+        const val CONNECTIVITY_PROBE_URL = "https://raw.githubusercontent.com/MMUU6699/Laze/main/calibration.json"
 
         /** Average size of one saved map tile, for the area-download estimate ([areaDownloadPlan]):
          *  OpenFreeMap tiles sampled at 26 to 170 KB, plus the terrain layer that rides along. */

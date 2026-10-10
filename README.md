@@ -1,39 +1,29 @@
 <div align="center">
 
-<img src="docs/logo.svg" width="120" alt="Vela Maps logo">
+# Laze (لايز)
 
-# Vela Maps
+**تطبيق ملاحة مجتمعي ذكي للعراق · Community Navigation for Iraq**
 
-**The best of OpenStreetMap and Google Maps, in one app.**
+Crowdsourced navigation, real-time road hazard reports, Arabic voice guidance, and open maps powered by Supabase and MapLibre.
 
-Live traffic, real place data and turn-by-turn navigation, with no Google account, no Play Services and no Google code on your phone.
+[![License: GPL v3](https://img.shields.io/badge/License-GPL_v3-blue.svg)](LICENSE)
+[![Repo: Laze](https://img.shields.io/badge/GitHub-MMUU6699%2FLaze-teal)](https://github.com/MMUU6699/Laze)
 
-[![Stable release](https://img.shields.io/github/v/release/PimpinPumpkin/Vela?label=stable&color=149387)](https://github.com/PimpinPumpkin/Vela/releases/latest)
-[![Build](https://img.shields.io/github/actions/workflow/status/PimpinPumpkin/Vela/ci.yml?branch=main&label=build)](https://github.com/PimpinPumpkin/Vela/actions/workflows/ci.yml)
-[![License: GPL v3](https://img.shields.io/github/license/PimpinPumpkin/Vela?color=blue)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/PimpinPumpkin/Vela?style=flat&color=ffd43b)](https://github.com/PimpinPumpkin/Vela/stargazers)
-[![Translation status](https://hosted.weblate.org/widget/vela-maps/app/svg-badge.svg)](https://hosted.weblate.org/engage/vela-maps/)
-
-[Install](#install) · [What you get](#what-you-get) · [Docs](https://pimpinpumpkin.github.io/Vela/docs/) · [FAQ](docs/FAQ.md) · [The book](docs/book/README.md) · [Privacy](#privacy) · [How it works](SPEC.md) · [Build](docs/BUILDING.md) · [Discussions](https://github.com/PimpinPumpkin/Vela/discussions) · [Translate](https://hosted.weblate.org/engage/vela-maps/)
-
-[<img src="https://img.shields.io/badge/VISIT%20THE%20WEBSITE-149387?style=for-the-badge" alt="Visit the website">](https://pimpinpumpkin.github.io/Vela/)
+[عن التطبيق](#عن-التطبيق) · [البنية والأمان](#البنية-والأمان) · [الخصوصية](PRIVACY.md) · [البناء والتشغيل](docs/BUILDING.md)
 
 </div>
 
-> [!warning]
-> **Vela is in beta, so you may run into bugs.** If you do, open an issue and fill out the
-> template. Nightlies and canary builds are newer still and less tested than the weekly stable.
+## عن التطبيق
 
-An open-source Google Maps alternative for Android: *what NewPipe is to
-YouTube, for Google Maps.* The map is open data. The basemap is open vector tiles (OpenStreetMap), and
-the places on it are **Vela data**: Overture Maps and AllThePlaces, positioned
-with OpenStreetMap, baked into tiles in this repo and streamed from its
-releases. Browsing around never asks Google anything. Search, tap a place or
-ask for a route, and the phone itself asks Google's public web endpoints, with
-no account, no key and no server in between, for what only Google does well:
-search, hours, reviews, photos, and routes that know about traffic and closed
-roads. Built for degoogled phones such as GrapheneOS, and it runs on stock
-Android too.
+**Laze (لايز)** هو تطبيق ملاحة مجتمعي صُمم خصيصاً لواقع الطرق في العراق:
+- **واجهة عربية كاملة (RTL)** مع عداد سرعة متكيف وأزرار بلاغات سهلة الوصول بنقرتين.
+- **إرشاد صوتي عربي** مع فحص سلامة محرك تحويل النص إلى كلام (`VoiceHealth`).
+- **بلاغات حية من المجتمع عبر Supabase**: حوادث، سيطرات أمنية، مطبات، وفيضانات وإغلاقات طرق مع تأكيد مجتمعي ونقاط تفاعل.
+- **صندوق صادر محلي (Offline Outbox)**: حفظ البلاغات محلياً أثناء انقطاع الاتصال ومزامنتها فور توفر الشبكة مع صلاحية تلقائية (30 دقيقة).
+- **أمان عالي وخصوصية صارمة**: سياسات RLS تفصل البريد الإلكتروني عن الملف العام، وتمنح المستخدم خيار حذف الحساب كاملاً من داخل التطبيق.
+- **خرائط ومسارات مفتوحة**: اعتماد وضع "بدون Google" كخيار افتراضي لحماية الخصوصية والاعتمادية.
+
+> مبني على أسس مشروع Vela Maps المفتوح المصدر بموجب ترخيص GNU GPL v3.0 مع الحفاظ التام على حقوق النشر الأصلية.
 
 <p align="center"><img src="docs/not-google-maps.png" width="320" alt="A tub of I Can't Believe It's Not Butter relabeled I can't believe it's not Google Maps"></p>
 

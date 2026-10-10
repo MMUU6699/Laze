@@ -1,44 +1,23 @@
-# Vela Maps - Privacy
+# Laze - Privacy & Data Protection
 
-What leaves your phone, where it goes, and what does not. Vela asks Google's public web
-endpoints for some things, so Google does see some of your requests, the way it sees a
-logged-out browser's. They are not tied to an account.
+What leaves your phone, where it goes, and how your privacy is protected. Laze is a community navigation app for Iraq built on open-source foundations (GPL-3.0 derived from Vela Maps), featuring real-time road hazard reports and crowdsourced alerts powered by a secure Supabase backend.
 
 ## In short
 
-- **Nothing of Google's runs on your phone.** No Play Services, no Google SDK, no account, no
-  API key. Google's public servers answer the app's anonymous requests. That is the design, the
-  same as NewPipe's for YouTube. It is not a claim of zero Google contact.
-- **There is no Vela server.** No backend, no account, no analytics, no crash reporting, no ad
-  SDK. Nothing you do is sent to the project.
-- **Browsing the map does not reach Google, by default.** The businesses you pan past are
-  Vela data: Overture Maps and AllThePlaces, positioned with OpenStreetMap, built in Vela's
-  repository and streamed from its releases, or read from a downloaded region. Settings >
-  Places > "Place icons on the map" is set to **Vela data** out of the box. **Both** adds one
-  Google request each time the map settles, and **Google** asks on every pan.
-- **Vela asks Google directly from your phone** for searching (autocomplete as you type, and
-  the search when you submit), for opening a place (hours, reviews, photos, busy times), and
-  for driving routes and their traffic. Google sees your IP address, the search text, and the
-  map area or the trip's endpoints. It does not see a Google account, and no key labels the
-  traffic as Vela's. The one possible label is a header Android's WebView adds; see below.
-- **One switch turns Google off:** Settings > Privacy > "Use Vela without Google". The first run
-  asks the same question before the map loads. With Google on, the Privacy page lists every
-  smaller switch in one place: reviews, photos, tapped-place lookups, the traffic requests.
-  With the main switch on, search
-  uses OpenStreetMap (the Photon geocoder) and your downloaded regions, routes come from the
-  open routers with no live traffic, and no request goes to a Google host. One exception:
-  opening a shared short link (`maps.app.goo.gl/...`) asks Google's link shortener where it
-  points, once, with no cookies. "Open shared Google Maps links" under the same switch refuses
-  those links.
-- **A few open services** get small, specific requests (map tiles, routing, address lookups,
-  transit boards, terrain). The table lists them.
-- **Your places, history and settings stay on the phone.** There is no cloud sync.
+- **Community & Account Data via Supabase:** Laze supports secure user authentication (Google Sign-In). Your account email is strictly private and visible only to you via Row-Level Security (RLS). Public leaderboards and hazard reports expose only your chosen display name and avatar.
+- **Road Hazard Reports:** When you report or confirm a road event (police checkpoint, hazard, pothole, accident, closure), the report coordinate, type, and timestamp are shared with the Laze community so drivers around you are warned. Reports auto-expire after their validity window (typically 30–60 minutes).
+- **Offline Outbox:** If you report a road event while disconnected, it is saved securely on your device and synced automatically once your network connection is restored.
+- **Account Deletion:** You have the full right to delete your account at any time directly from the app (Profile -> Delete Account). This invokes the `delete_own_account()` secure procedure, permanently purging your profile and disconnecting your historical reports.
+- **Google-Free by Default:** Laze defaults to open navigation data (OpenStreetMap vector tiles, Photon geocoder, and OSRM/Valhalla routing), meaning no unsolicited queries are made to Google services unless explicitly toggled on by you.
+- **No Background Location Tracking:** Laze only accesses your GPS position for active navigation and live guidance while the app is in use. Your driving trails are never uploaded to our servers or sold to third parties.
+- **Local Storage:** Your saved places, search history, offline downloaded map regions, and preferences remain stored locally on your device.
 
 ## What each service receives
 
 | Service | When | What it gets |
 |---|---|---|
-| **Vela's own place data** (GitHub releases) | browsing the map with "Vela data" | your IP, and which byte ranges of a file you read, which implies your rough map area |
+| **Supabase (Laze Backend)** | signing in, submitting or confirming a road hazard report, fetching nearby community alerts | your authenticated user ID, display name, avatar, and when reporting: the approximate coordinates, hazard type, and timestamp of the road report. Emails are protected by RLS and never shared publicly. |
+| **Laze data** (GitHub releases) | browsing the map with "Laze data" | your IP, and which byte ranges of a file you read, which implies your rough map area |
 | **google.com** (autocomplete) | as you type in the search box, each time you pause, from the second character | your IP, the text so far, the map view (center and span), and a cookie that lasts only while Vela runs. When the map shows somewhere 50 km or more from you, a second request centered on your position |
 | **google.com** (search) | every search you submit, and a tap on a place on the map | your IP, the query (for a tap, the place's name), the map view (for a tap, the tapped spot). When you search from inside the view, a second request over about 2.5 km around your position so nearby places rank first. The same short-lived cookie |
 | **google.com** (places on the map) | only with "Place icons on the map" on **Both** (one request after you stop panning) or **Google** (as you pan) | your IP, the map area |

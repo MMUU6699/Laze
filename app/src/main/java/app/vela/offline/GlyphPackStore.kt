@@ -21,7 +21,7 @@ import java.util.zip.ZipInputStream
  * first basemap download. The sprite is bundled in the APK and copied into `files/sprites/` once.
  */
 object GlyphPackStore {
-    private const val PACK_URL = "https://github.com/PimpinPumpkin/Vela/releases/download/map-fonts/map-fonts.zip"
+    private const val PACK_URL = "https://github.com/MMUU6699/Laze/releases/download/map-fonts/map-fonts.zip"
     private val mutex = Mutex()
     /** The glyph set's generation. 2 = Google Sans Flex over Roboto over Noto (2026-09-30); a pack
      *  unzipped before that has no marker and reads as 1. The asset name on the release is fixed,

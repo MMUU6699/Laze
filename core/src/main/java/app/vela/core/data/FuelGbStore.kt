@@ -36,7 +36,7 @@ class FuelGbStore(
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
     companion object {
-        const val BASE_URL = "https://github.com/PimpinPumpkin/Vela/releases/download/fuel-gb/"
+        const val BASE_URL = "https://github.com/MMUU6699/Laze/releases/download/fuel-gb/"
         const val FOLDER = "fuelgb"
         const val DATA_FILE = "fuel-gb.csv.gz"
         const val MANIFEST_FILE = "fuel-gb-manifest.json"

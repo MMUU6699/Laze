@@ -44,24 +44,11 @@ object Onboarding {
      *  once the model is present or the user has answered. */
     val showVoicePrompt = mutableStateOf(false)
 
-    // Forks: point this at your own funding page.
-    const val DONATE_URL = "https://buymeacoffee.com/PimpinPumpkin"
+    // Donation prompt disabled for Laze
+    const val DONATE_URL = ""
 
-    /**
-     * Open the funding page in a browser. Shows a toast ONLY when nothing can handle the link (no
-     * browser installed) instead of failing silently - a stripped/degoogled ROM often ships without
-     * one, and a dead-tap with no feedback reads as a broken button.
-     */
     fun openDonate(context: Context) {
-        try {
-            context.startActivity(
-                android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(DONATE_URL)),
-            )
-        } catch (e: android.content.ActivityNotFoundException) {
-            android.widget.Toast.makeText(
-                context, context.getString(app.vela.R.string.donate_no_browser), android.widget.Toast.LENGTH_LONG,
-            ).show()
-        }
+        // No-op for Laze
     }
 
     private const val PREFS = "vela_onboarding"
@@ -75,9 +62,7 @@ object Onboarding {
             firstMs = System.currentTimeMillis()
             p.edit().putLong("first_ms", firstMs).apply()
         }
-        val donatePromptDone = p.getBoolean("donate_prompt_done", false)
-        showDonatePrompt.value = welcomeDone.value && !donatePromptDone &&
-            (System.currentTimeMillis() - firstMs) >= WEEK_MS
+        showDonatePrompt.value = false
 
         // Location rationale: show once, unless already granted or answered. Granted counts as done
         // (never nag someone who allowed it). On a brand-new install welcomeDone is still false here →

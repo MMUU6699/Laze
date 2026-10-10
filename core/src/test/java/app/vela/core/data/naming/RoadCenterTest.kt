@@ -121,7 +121,7 @@ class RoadCenterTest {
         val line = app.vela.core.data.google.PolylineCodec.decode(java.io.File(path!!).readText().trim())
         val http = okhttp3.OkHttpClient.Builder().callTimeout(30, java.util.concurrent.TimeUnit.SECONDS).build()
         fun get(url: String): ByteArray? = runCatching {
-            http.newCall(okhttp3.Request.Builder().url(url).header("User-Agent", "VelaMaps-naming-study (github.com/PimpinPumpkin/Vela)").build())
+            http.newCall(okhttp3.Request.Builder().url(url).header("User-Agent", "LazeMaps-naming-study (github.com/MMUU6699/Laze)").build())
                 .execute().use { r -> if (r.isSuccessful) r.body?.bytes() else null }
         }.getOrNull()
         val template = Regex("\"tiles\"\\s*:\\s*\\[\\s*\"([^\"]+)\"").find(String(get("https://tiles.openfreemap.org/planet")!!))!!.groupValues[1]
