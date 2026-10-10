@@ -9,6 +9,7 @@ import app.vela.core.model.RouteLeg
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import java.util.Locale
 
@@ -18,6 +19,11 @@ class NavEngineChainTest {
     private val lng0 = -121.7405
     private val mPerDegLng = 111_320.0 * Math.cos(Math.toRadians(lat))
     private fun pt(e: Double, n: Double) = LatLng(lat + n / 111_320.0, lng0 + e / mPerDegLng)
+
+    @Before fun setUp() {
+        SpokenDetail.mode = SpokenDetail.Mode.FULL
+        NavStringsRegistry.setLocale(Locale.US)
+    }
 
     @After fun reset() {
         SpokenDetail.mode = SpokenDetail.Mode.FULL

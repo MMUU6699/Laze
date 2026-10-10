@@ -12,6 +12,7 @@ import app.vela.core.model.ManeuverType
 import app.vela.core.model.Route
 import app.vela.core.model.RouteLeg
 import org.junit.Assert.assertEquals
+import org.junit.After
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -28,6 +29,11 @@ class LazeFullTripReplayTest {
     @Before
     fun setup() {
         NavStringsRegistry.setLocale(java.util.Locale.forLanguageTag("ar"))
+    }
+
+    @After
+    fun teardown() {
+        NavStringsRegistry.setLocale(java.util.Locale.US)
     }
 
     private fun baghdadTrip(): Route {
