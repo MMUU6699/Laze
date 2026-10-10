@@ -798,6 +798,9 @@
     <string name="directions_need_location">Please enable location or select a starting point</string>
     <string name="mapvm_directions_need_recalibration">Directions need recalibration: %1$s</string> <!-- format -->
     <string name="mapvm_routing_failed_reason">Routing failed: %1$s</string> <!-- format -->
+    <string name="mapvm_routing_timeout">Routing timed out. Please check your connection and try again.</string>
+    <string name="mapvm_routing_network_error">Network connection error while calculating route.</string>
+    <string name="mapvm_routing_server_error">Routing server error (%1$s). Please try again.</string>
     <string name="mapvm_no_transit_routes">No transit routes found</string>
     <string name="mapvm_trip_default_name">Trip</string>
     <string name="mapvm_no_voice_engine">No voice installed for spoken directions</string>

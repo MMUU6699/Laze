@@ -34,7 +34,7 @@ private data class ConfirmRpcParams(
  * Manages community road reports, spatial querying, confirmations, and in-memory caching.
  */
 class RoadReportRepository(
-    private val context: Context,
+    private val context: Context? = null,
     private val authRepository: AuthRepository? = null
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -42,13 +42,17 @@ class RoadReportRepository(
     val reports: StateFlow<List<RoadReport>> = _reports.asStateFlow()
 
     private val deviceId: String by lazy {
-        val prefs = context.getSharedPreferences("laze_device_prefs", Context.MODE_PRIVATE)
-        var id = prefs.getString("device_id", null)
+        val prefs = context?.getSharedPreferences("laze_device_prefs", Context.MODE_PRIVATE)
+        var id = prefs?.getString("device_id", null)
         if (id == null) {
             id = UUID.randomUUID().toString()
-            prefs.edit().putString("device_id", id).apply()
+            prefs?.edit()?.putString("device_id", id)?.apply()
         }
         id
+    }
+
+    internal fun setReportsForTesting(testReports: List<RoadReport>) {
+        _reports.value = testReports
     }
 
     /**
@@ -247,6 +251,7 @@ class RoadReportRepository(
 
     /**
      * Finds active reports located within bufferMeters along a polyline.
+     * Uses bounding-box pre-filtering and fast coordinate delta checks to avoid O(P * R) heavy calculations.
      */
     fun findReportsAlongPath(
         pathPoints: List<Pair<Double, Double>>,
@@ -254,9 +259,43 @@ class RoadReportRepository(
     ): List<RoadReport> {
         if (pathPoints.isEmpty()) return emptyList()
         val activeReports = _reports.value.filter { it.status == RoadReportStatus.ACTIVE && it.isReliable }
-        return activeReports.filter { report ->
-            pathPoints.any { (lat, lng) ->
-                report.distanceMetersTo(lat, lng) <= bufferMeters
+        if (activeReports.isEmpty()) return emptyList()
+
+        // 1. Calculate overall BBox of the given path
+        var minLat = Double.MAX_VALUE
+        var maxLat = -Double.MAX_VALUE
+        var minLng = Double.MAX_VALUE
+        var maxLng = -Double.MAX_VALUE
+        for (i in pathPoints.indices) {
+            val (lat, lng) = pathPoints[i]
+            if (lat < minLat) minLat = lat
+            if (lat > maxLat) maxLat = lat
+            if (lng < minLng) minLng = lng
+            if (lng > maxLng) maxLng = lng
+        }
+        val bufferDegLat = (bufferMeters / 111_000.0) * 1.5
+        val cosMid = kotlin.math.cos(Math.toRadians((minLat + maxLat) / 2.0)).coerceAtLeast(0.01)
+        val bufferDegLng = bufferDegLat / cosMid
+
+        val bboxMinLat = minLat - bufferDegLat
+        val bboxMaxLat = maxLat + bufferDegLat
+        val bboxMinLng = minLng - bufferDegLng
+        val bboxMaxLng = maxLng + bufferDegLng
+
+        // 2. Fast candidate filter by BBox
+        val candidateReports = activeReports.filter { r ->
+            r.latitude in bboxMinLat..bboxMaxLat && r.longitude in bboxMinLng..bboxMaxLng
+        }
+        if (candidateReports.isEmpty()) return emptyList()
+
+        // 3. Coordinate delta pre-filtering before haversine check
+        return candidateReports.filter { report ->
+            val rLat = report.latitude
+            val rLng = report.longitude
+            pathPoints.any { (pLat, pLng) ->
+                kotlin.math.abs(rLat - pLat) <= bufferDegLat &&
+                kotlin.math.abs(rLng - pLng) <= bufferDegLng &&
+                report.distanceMetersTo(pLat, pLng) <= bufferMeters
             }
         }
     }

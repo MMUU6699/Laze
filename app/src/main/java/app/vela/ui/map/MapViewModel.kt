@@ -529,6 +529,10 @@ class MapViewModel @Inject constructor(
     private val _state = MutableStateFlow(MapUiState())
     val state: StateFlow<MapUiState> = _state.asStateFlow()
 
+    private val vmExceptionHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
+        android.util.Log.e("MapViewModel", "Unhandled coroutine error", throwable)
+    }
+
     private var destination: LatLng? = null
     private var mapCenter: LatLng? = null
     private var locationJob: Job? = null
@@ -637,41 +641,57 @@ class MapViewModel @Inject constructor(
                 }
         }
         // Laze: Real-time hazard monitoring along route during navigation (runs periodically on Default dispatcher)
-        viewModelScope.launch(Dispatchers.Default) {
+        viewModelScope.launch(Dispatchers.Default + vmExceptionHandler) {
             var cachedRoute: app.vela.core.model.Route? = null
             var cachedPoints: List<Pair<Double, Double>> = emptyList()
 
             while (isActive) {
-                val s = _state.value
-                if (s.navigating && s.center != null && s.activeRoute != null) {
-                    val here = s.center
-                    val route = s.activeRoute
-                    if (cachedRoute !== route) {
-                        cachedRoute = route
-                        cachedPoints = route.polyline.map { it.lat to it.lng }
-                    }
-                    val nearby = roadReportRepository.findReportsAlongPath(cachedPoints, 200.0)
-                    val nextHazard = nearby.firstOrNull { report ->
-                        val dist = report.distanceMetersTo(here.lat, here.lng)
-                        dist in 50.0..1500.0 && report.id != s.hazardAlertDismissedId
-                    }
-                    if (nextHazard != null && s.currentHazardAlert?.id != nextHazard.id) {
-                        _state.update { it.copy(currentHazardAlert = nextHazard) }
-                        withContext(Dispatchers.Main) {
-                            voice.speak(appContext.getString(R.string.report_nav_alert_title) + ": " + nextHazard.type.titleAr)
-                            if (nextHazard.type == app.vela.core.backend.RoadReportType.CLOSURE ||
-                                nextHazard.type == app.vela.core.backend.RoadReportType.TRAFFIC) {
-                                navSession.forceRecheck()
+                try {
+                    val s = _state.value
+                    if (s.navigating && s.center != null && s.activeRoute != null) {
+                        val here = s.center
+                        val route = s.activeRoute
+                        if (cachedRoute !== route) {
+                            cachedRoute = route
+                            cachedPoints = route.polyline.map { it.lat to it.lng }
+                        }
+                        // Window route points to upcoming 25 km around user location (~0.25 deg lat/lng)
+                        val horizonPoints = if (cachedPoints.size > 150) {
+                            val windowed = cachedPoints.filter { (lat, lng) ->
+                                kotlin.math.abs(lat - here.lat) <= 0.25 && kotlin.math.abs(lng - here.lng) <= 0.25
+                            }
+                            if (windowed.isNotEmpty()) windowed else cachedPoints
+                        } else cachedPoints
+
+                        val nearby = roadReportRepository.findReportsAlongPath(horizonPoints, 200.0)
+                        val nextHazard = nearby.firstOrNull { report ->
+                            val dist = report.distanceMetersTo(here.lat, here.lng)
+                            dist in 50.0..1500.0 && report.id != s.hazardAlertDismissedId
+                        }
+                        if (nextHazard != null && s.currentHazardAlert?.id != nextHazard.id) {
+                            _state.update { it.copy(currentHazardAlert = nextHazard) }
+                            withContext(Dispatchers.Main) {
+                                val isArabic = app.vela.core.i18n.NavStringsRegistry.current().locale.language.startsWith("ar")
+                                val title = if (isArabic) nextHazard.type.titleAr else nextHazard.type.titleEn
+                                voice.speak(appContext.getString(R.string.report_nav_alert_title) + ": " + title)
+                                if (nextHazard.type == app.vela.core.backend.RoadReportType.CLOSURE ||
+                                    nextHazard.type == app.vela.core.backend.RoadReportType.TRAFFIC) {
+                                    navSession.forceRecheck()
+                                }
+                            }
+                        } else if (nextHazard == null && s.currentHazardAlert != null) {
+                            val currDist = s.currentHazardAlert.distanceMetersTo(here.lat, here.lng)
+                            if (currDist > 1600.0 || currDist < 20.0) {
+                                _state.update { it.copy(currentHazardAlert = null) }
                             }
                         }
-                    } else if (nextHazard == null && s.currentHazardAlert != null) {
-                        val currDist = s.currentHazardAlert.distanceMetersTo(here.lat, here.lng)
-                        if (currDist > 1600.0 || currDist < 20.0) {
-                            _state.update { it.copy(currentHazardAlert = null) }
-                        }
+                    } else if (!s.navigating && s.currentHazardAlert != null) {
+                        _state.update { it.copy(currentHazardAlert = null) }
                     }
-                } else if (!s.navigating && s.currentHazardAlert != null) {
-                    _state.update { it.copy(currentHazardAlert = null) }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    android.util.Log.e("MapViewModel", "Hazard monitoring loop error: ${t.message}", t)
                 }
                 delay(3000L)
             }
@@ -6588,12 +6608,14 @@ class MapViewModel @Inject constructor(
         routeJob?.cancel()
         savedRoutesJob?.cancel()
         _state.update { it.copy(routesLoading = true, routeLifecycle = RouteLifecycleState.CALCULATING_ROUTE, status = null) }
-        routeJob = viewModelScope.launch {
+        val distKm = origin.distanceTo(dest) / 1000.0
+        val dynamicTimeoutMs = ((8.0 + 0.1 * distKm).coerceIn(15.0, 60.0) + 10.0).toLong() * 1000L
+        routeJob = viewModelScope.launch(vmExceptionHandler) {
             try {
-                val routes = kotlinx.coroutines.withTimeoutOrNull(25_000L) {
+                val routes = kotlinx.coroutines.withTimeout(dynamicTimeoutMs) {
                     if (plan == null) dataSource.directions(origin, dest, effectiveMode, stops, s.avoidTolls, s.avoidHighways, s.avoidFerries)
                     else dataSource.directions(origin, dest, effectiveMode, plan, s.avoidTolls, s.avoidHighways, s.avoidFerries).map { it.copy(detourPlan = plan) }
-                } ?: emptyList()
+                }
                 if (!stillWanted()) return@launch // backed out / switched mode mid-fetch — don't resurrect it
                 _state.update {
                     it.copy(
@@ -6623,7 +6645,12 @@ class MapViewModel @Inject constructor(
                 // Warm the region's road-features file while the chooser is up: its first parse
                 // (176k features, 1.5 s on a 4a) used to land in the drive's first seconds beside
                 // the tile workers and the voice (Perfetto 2026-09-28).
-                if (routes.isNotEmpty()) roadFeaturesJob = viewModelScope.launch(Dispatchers.Default) { runCatching { roadFeaturesCoverRoute(routes.first().polyline) } }
+                // Window roadFeatures for long routes (>150km)
+                if (routes.isNotEmpty()) {
+                    val firstPoly = routes.first().polyline
+                    val targetPoly = if (distKm > 150.0 && firstPoly.size > 200) firstPoly.take(150) else firstPoly
+                    roadFeaturesJob = viewModelScope.launch(Dispatchers.Default + vmExceptionHandler) { runCatching { roadFeaturesCoverRoute(targetPoly) } }
+                }
                 // The default active route can be a PROVISIONAL Google alternate (it sorts to the
                 // top when it has the fastest live ETA). A provisional route carries Google's
                 // ABBREVIATED steps + an ETA over un-snapped geometry — so the pre-nav preview showed
@@ -6631,12 +6658,53 @@ class MapViewModel @Inject constructor(
                 // re-applied traffic), exactly as picking an alternate does, so preview == nav.
                 if (routes.firstOrNull()?.provisional == true) selectRoute(0)
                 if (routes.isNotEmpty() && stops.isEmpty() && plan == null) offerSavedRoutes(origin, dest, effectiveMode, s.avoidTolls, s.avoidHighways, s.avoidFerries, ::stillWanted)
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                if (stillWanted()) {
+                    _state.update {
+                        it.copy(
+                            routes = emptyList(),
+                            routesLoading = false,
+                            routeLifecycle = RouteLifecycleState.ROUTE_ERROR,
+                            status = appContext.getString(R.string.mapvm_routing_timeout),
+                        )
+                    }
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e // superseded by a newer route()/cleared — don't touch state on a dead job
+            } catch (e: java.net.UnknownHostException) {
+                if (stillWanted()) {
+                    _state.update {
+                        it.copy(
+                            routes = emptyList(),
+                            routesLoading = false,
+                            routeLifecycle = RouteLifecycleState.ROUTE_ERROR,
+                            status = appContext.getString(R.string.mapvm_routing_network_error),
+                        )
+                    }
+                }
+            } catch (e: java.io.IOException) {
+                if (stillWanted()) {
+                    _state.update {
+                        it.copy(
+                            routes = emptyList(),
+                            routesLoading = false,
+                            routeLifecycle = RouteLifecycleState.ROUTE_ERROR,
+                            status = appContext.getString(R.string.mapvm_routing_network_error),
+                        )
+                    }
+                }
             } catch (e: CalibrationNeededException) {
-                if (stillWanted()) _state.update { it.copy(routesLoading = false, routeLifecycle = RouteLifecycleState.ROUTE_ERROR, status = appContext.getString(R.string.mapvm_directions_need_recalibration, e.message)) }
-            } catch (e: Exception) {
-                if (stillWanted()) _state.update { it.copy(routesLoading = false, routeLifecycle = RouteLifecycleState.ROUTE_ERROR, status = appContext.getString(R.string.mapvm_routing_failed_reason, e.message)) }
+                if (stillWanted()) _state.update { it.copy(routes = emptyList(), routesLoading = false, routeLifecycle = RouteLifecycleState.ROUTE_ERROR, status = appContext.getString(R.string.mapvm_directions_need_recalibration, e.message)) }
+            } catch (t: Throwable) {
+                if (stillWanted()) {
+                    val msg = t.message.orEmpty()
+                    val statusText = if (msg.contains("429") || msg.contains("500") || msg.contains("502") || msg.contains("503")) {
+                        appContext.getString(R.string.mapvm_routing_server_error, msg)
+                    } else {
+                        appContext.getString(R.string.mapvm_routing_failed_reason, msg.ifBlank { t.javaClass.simpleName })
+                    }
+                    _state.update { it.copy(routes = emptyList(), routesLoading = false, routeLifecycle = RouteLifecycleState.ROUTE_ERROR, status = statusText) }
+                }
             }
         }
     }

@@ -166,15 +166,20 @@ object RouteGeometry {
         tries: Int = OSRM_TRIES,
         departBearingDeg: Double? = null,
         // Bounded fetches (a mid-drive reroute, issue #557): the per-try call timeout and the
-        // stage's overall budget. The defaults keep a planning fetch exactly as it was.
+        // stage's overall budget. The defaults scale dynamically with trip distance.
         callTimeoutMs: Long? = null,
         budget: RouteBudget = RouteBudget.NONE,
         onFailure: ((String) -> Unit)? = null,
-    ): List<Route> =
-        routeOsrm(
+    ): List<Route> {
+        val distKm = origin.distanceTo(dest) / 1000.0
+        val effectiveTimeoutMs = callTimeoutMs ?: if (!budget.bounded) {
+            (maxOf(15.0, 8.0 + 0.1 * distKm).coerceAtMost(60.0) * 1000).toLong()
+        } else null
+        return routeOsrm(
             http, listOf(origin, dest), mode, alternatives = true, avoidTolls, avoidHighways, avoidFerries, tries, departBearingDeg,
-            callTimeoutMs = callTimeoutMs, budget = budget, onFailure = onFailure,
+            callTimeoutMs = effectiveTimeoutMs, budget = budget, onFailure = onFailure,
         )
+    }
 
     /** OSRM forced THROUGH [waypoints] (origin, vias…, dest) — used to follow Google's
      *  traffic-smart path with OSRM's full street-named steps (option 3: traffic-aware routing).
@@ -203,13 +208,18 @@ object RouteGeometry {
         // any). A via on a two-way or divided road otherwise snaps to whichever side is nearer,
         // and the router answers with a U-turn to get back (the spur the shape check refuses).
         waypointBearings: List<Double?>? = null,
-    ): List<Route> =
-        if (waypoints.size < 2) emptyList()
-        else routeOsrm(
+    ): List<Route> {
+        if (waypoints.size < 2) return emptyList()
+        val distKm = (waypoints.first().distanceTo(waypoints.last())) / 1000.0
+        val effectiveTimeoutMs = callTimeoutMs ?: if (!budget.bounded) {
+            (maxOf(15.0, 8.0 + 0.1 * distKm).coerceAtMost(60.0) * 1000).toLong()
+        } else null
+        return routeOsrm(
             http, waypoints, mode, alternatives = false, avoidTolls, avoidHighways, avoidFerries, tries = tries,
             departBearingDeg = departBearingDeg, strictVias = strictVias, looseVias = looseVias,
-            callTimeoutMs = callTimeoutMs, budget = budget, onFailure = onFailure, waypointBearings = waypointBearings,
+            callTimeoutMs = effectiveTimeoutMs, budget = budget, onFailure = onFailure, waypointBearings = waypointBearings,
         )
+    }
 
     /** OSRM `bearings=` with one entry per waypoint: "<deg>,<tolerance>" where a heading is given,
      *  empty where not. The count must equal the waypoint count or OSRM rejects the request. */

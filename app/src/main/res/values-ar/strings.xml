@@ -743,7 +743,10 @@
     <string name="mapvm_no_bicycle_route_found">تعذّر العثور على مسار بالدراجة</string>
     <string name="directions_need_location">يرجى تفعيل الموقع أو تحديد نقطة الانطلاق</string>
     <string name="mapvm_directions_need_recalibration">تتطلب الاتجاهات إعادة ضبط: %1$s</string>
-    <string name="mapvm_routing_failed_reason">Routing failed: %1$s</string>
+    <string name="mapvm_routing_failed_reason">فشل حساب المسار: %1$s</string>
+    <string name="mapvm_routing_timeout">انتهت مهلة جلب المسار. يرجى التحقق من الاتصال والمحاولة مجدداً.</string>
+    <string name="mapvm_routing_network_error">تعذر الاتصال بالشبكة أثناء حساب المسار.</string>
+    <string name="mapvm_routing_server_error">خطأ من خادم التوجيه (%1$s). يرجى المحاولة لاحقاً.</string>
     <string name="mapvm_no_transit_routes">لم يتم العثور على مسارات نقل عام</string>
     <string name="mapvm_trip_default_name">Trip</string>
     <string name="mapvm_no_voice_engine">لا يتوفر محرك صوتي لتوجيهات الملاحة المنطوقة</string>

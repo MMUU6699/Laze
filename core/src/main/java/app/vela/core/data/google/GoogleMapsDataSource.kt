@@ -794,6 +794,17 @@ class GoogleMapsDataSource @Inject constructor(
         } ?: route
     }
 
+    /** OkHttpClient with timeouts scaled dynamically to trip distance: max(15s, 8s + 0.1s * km) capped at 60s. */
+    private fun routingHttp(distanceKm: Double): OkHttpClient {
+        val timeoutSec = (8.0 + 0.1 * distanceKm).coerceIn(15.0, 60.0).toLong()
+        return http.newBuilder()
+            .callTimeout(timeoutSec, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(timeoutSec.coerceAtMost(20L), java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(timeoutSec, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(timeoutSec.coerceAtMost(20L), java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
     private suspend fun directionsPlain(
         origin: LatLng,
         destination: LatLng,
@@ -806,6 +817,8 @@ class GoogleMapsDataSource @Inject constructor(
         departBearingDeg: Double?,
         budgetMs: Long?,
     ): List<Route> = io {
+        val distKm = origin.distanceTo(destination) / 1000.0
+        val routingClient = routingHttp(distKm)
         // Mid-drive reroutes are URGENT: one shot per source, no divergence snap, no alternates
         // polish. The retry ladders below (3x OSRM + 3x Google with backoff) are right for a
         // planning fetch but can hold a reroute past NavSession's hard deadline on a flaky cell
@@ -824,7 +837,7 @@ class GoogleMapsDataSource @Inject constructor(
         val osrmTryMs: Long? = when {
             urgent -> URGENT_OSRM_TIMEOUT_MS
             bounded -> LADDER_OSRM_TRY_MS
-            else -> null
+            else -> (maxOf(15.0, 8.0 + 0.1 * distKm).coerceAtMost(60.0) * 1000).toLong()
         }
         val osrmBudget = when {
             !bounded -> RouteBudget.NONE
@@ -841,7 +854,7 @@ class GoogleMapsDataSource @Inject constructor(
             bikeSafeRoutes(origin, destination, waypoints, avoidTolls, avoidHighways, avoidFerries, urgent)?.let { return@io it }
         }
         if (mode == TravelMode.WALK && waypoints.isEmpty()) {
-            walkRoutes(origin, destination, tries, osrmTryMs, osrmBudget, onOsrmFail, urgent)?.let { return@io it }
+            walkRoutes(origin, destination, tries, osrmTryMs, osrmBudget, onOsrmFail, urgent, routingClient)?.let { return@io it }
         }
         // Multi-stop (rebuilt 2026-09-21, issue #600): Google is asked for the trip THROUGH the stops
         // (DirectionsPb.withWaypoints) and the open router is routed through them too. Same course =
@@ -856,7 +869,7 @@ class GoogleMapsDataSource @Inject constructor(
                 val phoneFirst = urgent && routeEngine.isReady(mode) && routeEngine.covers(origin, destination, mode)
                 val viaCall = {
                     RouteGeometry.routeVia(
-                        http, listOf(origin) + waypoints + destination, mode, avoidTolls, avoidHighways, avoidFerries, departBearingDeg,
+                        routingClient, listOf(origin) + waypoints + destination, mode, avoidTolls, avoidHighways, avoidFerries, departBearingDeg,
                         tries = tries, callTimeoutMs = osrmTryMs, budget = osrmBudget, onFailure = onOsrmFail,
                     )
                 }
@@ -952,7 +965,7 @@ class GoogleMapsDataSource @Inject constructor(
                                 // snap-distance refusal (a stop in a lot is a stop, not an appendix).
                                 val loose = all.indices.filter { i -> i in 1 until all.lastIndex && waypoints.any { it == all[i] } }.toSet()
                                 snapped = RouteGeometry.routeVia(
-                                    http, all, mode, avoidTolls, avoidHighways, avoidFerries, departBearingDeg,
+                                    routingClient, all, mode, avoidTolls, avoidHighways, avoidFerries, departBearingDeg,
                                     strictVias = true, looseVias = loose, tries = tries, callTimeoutMs = osrmTryMs, budget = budget,
                                 ).firstOrNull()?.copy(source = RouteSource.OSRM_VIA_SNAP)?.takeIf { r ->
                                     r.polyline.lastOrNull()?.let { it.distanceTo(destination) <= SNAP_REACH_M } == true &&
@@ -1026,7 +1039,7 @@ class GoogleMapsDataSource @Inject constructor(
             // live-traffic source. Fetch both in parallel so the traffic round-trip is free.
             val openCall = {
                 RouteGeometry.route(
-                    http, origin, destination, mode, avoidTolls, avoidHighways, avoidFerries, tries, departBearingDeg,
+                    routingClient, origin, destination, mode, avoidTolls, avoidHighways, avoidFerries, tries, departBearingDeg,
                     callTimeoutMs = osrmTryMs, budget = osrmBudget, onFailure = onOsrmFail,
                 )
             }
@@ -1411,7 +1424,7 @@ class GoogleMapsDataSource @Inject constructor(
             val viaRoute = when {
                 hybrid != null -> hybrid
                 (!urgent || avoidWanted) && topDivergent -> RouteGeometry.routeVia(
-                    http, listOf(origin) + RouteGeometry.sampleVias(gTop!!.polyline) + destination, mode,
+                    routingClient, listOf(origin) + RouteGeometry.sampleVias(gTop!!.polyline) + destination, mode,
                     avoidTolls, avoidHighways, avoidFerries, departBearingDeg, strictVias = true,
                     tries = tries, callTimeoutMs = osrmTryMs, budget = budget,
                 ).firstOrNull()?.copy(source = RouteSource.OSRM_VIA_SNAP) // a trip log can tell a jam snap from a plain route
@@ -1631,10 +1644,10 @@ class GoogleMapsDataSource @Inject constructor(
      */
     private suspend fun walkRoutes(
         origin: LatLng, destination: LatLng, tries: Int, osrmTryMs: Long?, osrmBudget: RouteBudget,
-        onOsrmFail: (String) -> Unit, urgent: Boolean,
+        onOsrmFail: (String) -> Unit, urgent: Boolean, routingClient: OkHttpClient = http,
     ): List<Route>? = coroutineScope {
         val openD = async {
-            RouteGeometry.route(http, origin, destination, TravelMode.WALK, tries = tries, callTimeoutMs = osrmTryMs, budget = osrmBudget, onFailure = onOsrmFail)
+            RouteGeometry.route(routingClient, origin, destination, TravelMode.WALK, tries = tries, callTimeoutMs = osrmTryMs, budget = osrmBudget, onFailure = onOsrmFail)
         }
         val googleD = async {
             if (urgent || !app.vela.core.data.RoutingPrefs.googleTraffic) emptyList()
@@ -1929,7 +1942,8 @@ class GoogleMapsDataSource @Inject constructor(
         // The traffic snap's guards (issue #478): a sampled point that lands on a flyover deck, the
         // far carriageway or a dead-end lane forces an out-and-back or a loop, so the snap must reach
         // the destination, stay within SNAP_LENGTH_SLACK of the route it names, and carry no spur.
-        val named = RouteGeometry.routeVia(http, vias, mode, avoidTolls, avoidHighways, avoidFerries, strictVias = true).firstOrNull()
+        val routingClient = routingHttp(origin.distanceTo(destination) / 1000.0)
+        val named = RouteGeometry.routeVia(routingClient, vias, mode, avoidTolls, avoidHighways, avoidFerries, strictVias = true).firstOrNull()
             ?.takeIf { it.polyline.lastOrNull()?.let { p -> p.distanceTo(destination) <= SNAP_REACH_M } == true }
             ?.takeIf { it.distanceMeters <= route.distanceMeters * SNAP_LENGTH_SLACK + SNAP_LENGTH_SLACK_M }
             ?.takeIf { !spurWithTurn(it, route.polyline) }
@@ -1999,7 +2013,8 @@ class GoogleMapsDataSource @Inject constructor(
         }
         return if (routes.all { it.polyline.size > 2 }) routes
         else {
-            val geoms = RouteGeometry.fetchAll(http, origin, destination, mode)
+            val routingClient = routingHttp(origin.distanceTo(destination) / 1000.0)
+            val geoms = RouteGeometry.fetchAll(routingClient, origin, destination, mode)
             routes.mapIndexed { i, r ->
                 if (r.polyline.size > 2) r
                 else RouteGeometry.reposition(r, geoms.getOrNull(i) ?: listOf(origin, destination))
