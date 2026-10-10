@@ -72,6 +72,19 @@ object CoreModule {
     @Singleton
     fun routeEngine(@ApplicationContext context: Context): RouteEngine =
         ObfRouteEngine { File(app.vela.core.data.OfflineRoot.dir ?: context.filesDir, "obf") }
+
+    @Provides
+    @Singleton
+    fun authRepository(@ApplicationContext context: Context): app.vela.core.backend.AuthRepository =
+        app.vela.core.backend.AuthRepository(context)
+
+    @Provides
+    @Singleton
+    fun roadReportRepository(
+        @ApplicationContext context: Context,
+        authRepository: app.vela.core.backend.AuthRepository
+    ): app.vela.core.backend.RoadReportRepository =
+        app.vela.core.backend.RoadReportRepository(context, authRepository)
 }
 
 /** A cookie jar the app can empty (Settings > Privacy "Start a new Google session"). */

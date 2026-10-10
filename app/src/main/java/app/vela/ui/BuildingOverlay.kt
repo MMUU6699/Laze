@@ -11,10 +11,10 @@ import androidx.compose.runtime.mutableStateOf
  * OSM buildings are unaffected.
  */
 object BuildingOverlay {
-    val on = mutableStateOf(true)
+    val on = mutableStateOf(false)
 
     fun init(context: Context) {
-        on.value = prefs(context).getBoolean(KEY, true)
+        on.value = prefs(context).getBoolean(KEY, false)
     }
 
     fun set(context: Context, value: Boolean) {

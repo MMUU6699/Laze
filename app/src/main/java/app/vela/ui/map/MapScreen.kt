@@ -2027,6 +2027,9 @@ fun MapScreen(
                         app.vela.ui.formatDuration(r.durationInTrafficSeconds ?: r.durationSeconds), app.vela.ui.formatDistance(r.distanceMeters))
                 }
                 app.vela.ui.place.GoogleStyleDirectionsPanel(
+                    isLoading = state.routesLoading,
+                    errorMessage = state.status,
+                    onRetry = { vm.route(state.travelMode) },
                     onShowTraffic = if (app.vela.ui.RouteTrafficOnTap.on.value && !state.routeTrafficRequested && !app.vela.ui.GoogleFree.on.value && state.travelMode != app.vela.core.model.TravelMode.WALK) vm::requestRouteTraffic else null,
                     currentMode = state.travelMode,
                     routes = state.routes,

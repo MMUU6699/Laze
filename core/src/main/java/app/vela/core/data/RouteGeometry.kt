@@ -348,6 +348,26 @@ object RouteGeometry {
                 runCatching { Thread.sleep(backoff) }
             }
         }
+        if (mode == TravelMode.DRIVE) {
+            val fallbackUrl = "https://router.project-osrm.org/route/v1/driving/$coords" +
+                "?overview=full&geometries=polyline6&steps=true" +
+                (if (alternatives) "&alternatives=3" else "")
+            try {
+                val fbReq = Request.Builder().url(fallbackUrl).header("User-Agent", VelaConfig.VELA_UA).build()
+                http.newCall(fbReq).execute().use { fbResp ->
+                    if (fbResp.isSuccessful) {
+                        val body = json.parseToJsonElement(fbResp.body?.string().orEmpty()).jsonObject
+                        val routes = body["routes"]?.jsonArray
+                        if (routes != null) {
+                            val parsed = routes.mapNotNull { parseOsrmRoute(it.jsonObject) }
+                            if (parsed.isNotEmpty()) return parsed
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // fallback network exception
+            }
+        }
         onFailure?.invoke("$lastFailure x$tries after ${budget.elapsedMs()} ms")
         return emptyList()
     }

@@ -150,6 +150,15 @@
                 <data android:host="maps.google.com" />
                 <data android:host="maps.app.goo.gl" />
             </intent-filter>
+
+            <!-- Supabase Google OAuth callback for Laze -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="laze" android:host="auth" />
+                <data android:scheme="app.vela" android:host="auth" />
+            </intent-filter>
         </activity>
 
         <activity-alias

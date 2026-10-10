@@ -1845,7 +1845,6 @@ fun DirectionsPanel(
             ) {
                 listOf(
                     Triple(TravelMode.DRIVE, stringResource(R.string.place_mode_drive), Sym.DirectionsCar),
-                    Triple(TravelMode.TRANSIT, stringResource(R.string.place_mode_transit), Sym.DirectionsBus),
                     Triple(TravelMode.WALK, stringResource(R.string.place_mode_walk), Sym.DirectionsWalk),
                     Triple(TravelMode.BICYCLE, stringResource(R.string.place_mode_bike), Sym.DirectionsBike),
                 ).forEach { (mode, label, icon) ->

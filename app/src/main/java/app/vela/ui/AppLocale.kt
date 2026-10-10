@@ -32,9 +32,10 @@ object AppLocale {
     // "he" is the modern Hebrew code the picker + NavStrings use; the Android RESOURCES live in the
     // legacy-qualifier folder res/values-iw (AAPT's Hebrew qualifier), and the platform maps a "he"
     // locale onto values-iw, so the two agree. (Same legacy-pair handling as id/in, yi/ji.)
-    val SUPPORTED = listOf("en", "fr", "de", "es", "it", "pt", "pt-BR", "nl", "ru", "pl", "sv", "uk", "hu", "et", "zh", "zh-TW", "ja", "he")
+    val SUPPORTED = listOf("ar", "en", "fr", "de", "es", "it", "pt", "pt-BR", "nl", "ru", "pl", "sv", "uk", "hu", "et", "zh", "zh-TW", "ja", "he")
 
     private val ENDONYMS = mapOf(
+        "ar" to "العربية",
         "en" to "English", "fr" to "Français", "de" to "Deutsch", "es" to "Español",
         "it" to "Italiano", "pt" to "Português (Portugal)", "pt-BR" to "Português (Brasil)", "nl" to "Nederlands", "ru" to "Русский",
         "pl" to "Polski", "sv" to "Svenska", "uk" to "Українська", "hu" to "Magyar", "et" to "Eesti",
@@ -49,18 +50,21 @@ object AppLocale {
      *  of nothing; falls back to English when the system language isn't one Vela ships. */
     fun deviceDefaultSupported(): String {
         val sys = Locale.getDefault()
+        if (sys.language == "ar") return "ar"
         // Chinese needs the script split: Traditional regions/scripts map to the zh-TW entry.
         if (sys.language == "zh") {
             return if (NavStringsRegistry.tagOf(sys) == "zh-tw") "zh-TW" else "zh"
         }
         // Portuguese splits by country: values-pt is European, values-pt-rBR Brazilian.
         if (sys.language == "pt") return if (sys.country == "BR") "pt-BR" else "pt"
-        return sys.language.takeIf { it in SUPPORTED } ?: "en"
+        return sys.language.takeIf { it in SUPPORTED } ?: "ar"
     }
 
     fun init(context: Context) {
-        language.value = prefs(context).getString(KEY, "") ?: ""
-        directions.value = prefs(context).getString(KEY_DIRECTIONS, "") ?: ""
+        val p = prefs(context)
+        val saved = if (p.contains(KEY)) p.getString(KEY, "ar") ?: "ar" else "ar"
+        language.value = saved
+        directions.value = p.getString(KEY_DIRECTIONS, "") ?: ""
         apply()
     }
 
@@ -90,39 +94,24 @@ object AppLocale {
     fun directionsEffective(): Locale = directions.value.takeIf { it.isNotBlank() }
         ?.let { Locale.forLanguageTag(it) } ?: effective()
 
-    /** The resolved locale — the system default when following the system, else the override.
-     *  Hyphenated codes ("zh-TW") need [Locale.forLanguageTag]; `Locale("zh-TW")` would create a
-     *  bogus lowercase "zh-tw" LANGUAGE and match nothing. */
+    /** The resolved locale — defaults to Arabic ("ar") for new users, else the user choice. */
     fun effective(): Locale = language.value.takeIf { it.isNotBlank() }
-        ?.let { Locale.forLanguageTag(it) } ?: Locale.getDefault()
+        ?.let { Locale.forLanguageTag(it) } ?: Locale.forLanguageTag("ar")
 
     /** The device's own locale, captured on the first [wrap] BEFORE any override touches the JVM
      *  default - the value to restore when the user goes back to following the system. */
     private var systemDefault: Locale? = null
 
-    /** Wrap a base [Context] with the chosen language so `stringResource`/`getString` resolve to it.
-     *  Reads the pref directly (it runs from `attachBaseContext`, before [init]). When FOLLOWING the
-     *  system it also RESTORES `Locale.getDefault()`: `setDefault` is process-global and survived the
-     *  activity re-create, so after switching Russian back to English the parking-history dates kept
-     *  printing Russian months and the place scrape kept fetching hl=ru until the process died
-     *  (user 2026-07-10). */
+    /** Wrap a base [Context] with the chosen language so `stringResource`/`getString` resolve to it. */
     fun wrap(base: Context): Context {
         if (systemDefault == null) systemDefault = Locale.getDefault()
-        val lang = prefs(base).getString(KEY, "").orEmpty()
-        if (lang.isBlank()) {
-            systemDefault?.let { if (Locale.getDefault() != it) Locale.setDefault(it) }
-            syncAcceptLanguage()
-            return base
-        }
-        val locale = Locale.forLanguageTag(lang) // handles hyphenated tags like zh-TW
+        val p = prefs(base)
+        val lang = if (p.contains(KEY)) p.getString(KEY, "ar").orEmpty().ifBlank { "ar" } else "ar"
+        val locale = Locale.forLanguageTag(lang)
         Locale.setDefault(locale)
         syncAcceptLanguage()
         val config = Configuration(base.resources.configuration)
         config.setLocale(locale)
-        // Force the RTL/LTR direction from the chosen locale. setLocale only auto-updates
-        // layoutDirection when the config's direction wasn't already set, but AdaptiveDensity.wrap
-        // runs first and hands over a config with an explicit (LTR) direction, so Hebrew never
-        // flipped the layout without this (found + fixed in the vela-dpad fork).
         config.setLayoutDirection(locale)
         return base.createConfigurationContext(config)
     }

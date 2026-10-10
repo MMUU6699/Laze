@@ -130,6 +130,9 @@ fun GoogleStyleDirectionsPanel(
     compact: Boolean = false,
     modifier: Modifier = Modifier,
     onShowTraffic: (() -> Unit)? = null,
+    isLoading: Boolean = false,
+    errorMessage: String? = null,
+    onRetry: (() -> Unit)? = null,
 ) {
     val dark = isAppInDarkTheme()
     val ink = SheetPalette.ink(dark)
@@ -293,9 +296,39 @@ fun GoogleStyleDirectionsPanel(
             ) {
                 Column(Modifier.padding(start = 20.dp, end = 16.dp, top = if (compact) 6.dp else 12.dp)) {
                     if (route == null) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            Text(stringResource(R.string.place_finding_route), style = MaterialTheme.typography.bodyMedium, color = dim)
+                        if (isLoading) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                Text(stringResource(R.string.place_finding_route), style = MaterialTheme.typography.bodyMedium, color = dim)
+                            }
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Sym.Warning,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = errorMessage ?: stringResource(R.string.car_no_route),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (onRetry != null) {
+                                    Button(
+                                        onClick = onRetry,
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(stringResource(R.string.voice_error_retry))
+                                    }
+                                }
+                            }
                         }
                     } else {
                         val eta = route.durationInTrafficSeconds ?: route.durationSeconds
@@ -633,7 +666,6 @@ internal fun ModeTabs(
     Row(modifier.horizontalScroll(rememberScrollState()).padding(start = 8.dp)) {
         listOf(
             Triple(TravelMode.DRIVE, R.string.place_mode_drive, Sym.DirectionsCar),
-            Triple(TravelMode.TRANSIT, R.string.place_mode_transit, Sym.DirectionsBus),
             Triple(TravelMode.WALK, R.string.place_mode_walk, Sym.DirectionsWalk),
             Triple(TravelMode.BICYCLE, R.string.place_mode_bike, Sym.DirectionsBike),
         ).forEach { (mode, label, icon) ->

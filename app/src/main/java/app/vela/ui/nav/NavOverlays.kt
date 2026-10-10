@@ -71,6 +71,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.animation.core.animateFloat
@@ -295,11 +298,15 @@ fun ManeuverBanner(
                             .size(if (compact) 36.dp else 54.dp)
                             .graphicsLayer { rotationZ = angle },
                     )
-                } else Icon(
-                    if (isRoundabout(type)) rememberRoundaboutGlyph(roundabout) else maneuverIcon(type),
-                    contentDescription = null,
-                    modifier = Modifier.size(if (compact) 36.dp else 54.dp),
-                )
+                } else {
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Icon(
+                            if (isRoundabout(type)) rememberRoundaboutGlyph(roundabout) else maneuverIcon(type),
+                            contentDescription = null,
+                            modifier = Modifier.size(if (compact) 36.dp else 54.dp),
+                        )
+                    }
+                }
                 Spacer(Modifier.width(if (compact) 10.dp else 18.dp))
                 Column(Modifier.weight(1f)) {
                     val signs = if (rerouting) emptyList() else roadSigns(text, ref)
@@ -425,11 +432,13 @@ fun ManeuverBanner(
                 ) {
                     Text(stringResource(R.string.nav_compound_then).replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.width(8.dp))
-                    Icon(
-                        if (isRoundabout(nextType)) rememberRoundaboutGlyph(nextRoundabout) else maneuverIcon(nextType),
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                    )
+                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                        Icon(
+                            if (isRoundabout(nextType)) rememberRoundaboutGlyph(nextRoundabout) else maneuverIcon(nextType),
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
                     Spacer(Modifier.width(8.dp))
                     // Vela says what the next step is; Google's tab shows the arrow alone.
                     Text(nextText, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -597,8 +606,10 @@ private fun LaneGuide(hint: String, type: ManeuverType, on: Color = MaterialThem
                 Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                repeat(laneArrowCount(hint)) {
-                    Icon(maneuverIcon(type), contentDescription = null, modifier = Modifier.size(18.dp))
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    repeat(laneArrowCount(hint)) {
+                        Icon(maneuverIcon(type), contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
                 }
             }
         }
@@ -630,29 +641,31 @@ internal fun LaneDiagram(
     // taking, so a valid lane lights ALL its arrows rather than guessing (and lighting the wrong one).
     val target = maneuverBucket(maneuver)
     Surface(color = on.copy(alpha = 0.10f), shape = RoundedCornerShape(8.dp), modifier = modifier) {
-        Row(
-            Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            lanes.take(8).forEach { lane ->
-                val inds = lane.indications.ifEmpty { listOf("straight") }.distinct()
-                // In a valid lane, ONLY the arrow for the turn we're taking lights up — the other
-                // directions the lane also allows stay dim (so a "go straight" turn doesn't light
-                // the right-turn head on a straight-or-right lane). The active one = the lane's
-                // indication closest to the maneuver's direction. When the maneuver side is unknown
-                // (target null), light all of a valid lane's arrows. Invalid lanes: all dim.
-                val active = if (lane.valid && target != null) inds.minByOrNull { kotlin.math.abs(laneBucket(it) - target) } else null
-                fun lit(ind: String) = lane.valid && (target == null || ind == active)
-                // One SHARED vertical shaft + a head per indication (not a whole arrow each — that
-                // double-drew the shaft). Wider cell + smaller heads so two forked heads don't
-                // overlap; dim heads drawn first so the bright active head sits on top of any touch.
-                Canvas(Modifier.size(width = 30.dp, height = 26.dp)) {
-                    val cw = size.width; val ch = size.height
-                    val baseX = cw / 2f; val bendY = ch * 0.44f; val stroke = cw * 0.11f
-                    drawLine(if (lane.valid) bright else dim, Offset(baseX, ch * 0.92f), Offset(baseX, bendY), stroke, cap = StrokeCap.Round)
-                    inds.sortedBy { if (lit(it)) 1 else 0 }.forEach { ind ->
-                        laneHead(ind, if (lit(ind)) bright else dim, baseX, bendY, cw, ch, stroke)
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Row(
+                Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                lanes.take(8).forEach { lane ->
+                    val inds = lane.indications.ifEmpty { listOf("straight") }.distinct()
+                    // In a valid lane, ONLY the arrow for the turn we're taking lights up — the other
+                    // directions the lane also allows stay dim (so a "go straight" turn doesn't light
+                    // the right-turn head on a straight-or-right lane). The active one = the lane's
+                    // indication closest to the maneuver's direction. When the maneuver side is unknown
+                    // (target null), light all of a valid lane's arrows. Invalid lanes: all dim.
+                    val active = if (lane.valid && target != null) inds.minByOrNull { kotlin.math.abs(laneBucket(it) - target) } else null
+                    fun lit(ind: String) = lane.valid && (target == null || ind == active)
+                    // One SHARED vertical shaft + a head per indication (not a whole arrow each — that
+                    // double-drew the shaft). Wider cell + smaller heads so two forked heads don't
+                    // overlap; dim heads drawn first so the bright active head sits on top of any touch.
+                    Canvas(Modifier.size(width = 30.dp, height = 26.dp)) {
+                        val cw = size.width; val ch = size.height
+                        val baseX = cw / 2f; val bendY = ch * 0.44f; val stroke = cw * 0.11f
+                        drawLine(if (lane.valid) bright else dim, Offset(baseX, ch * 0.92f), Offset(baseX, bendY), stroke, cap = StrokeCap.Round)
+                        inds.sortedBy { if (lit(it)) 1 else 0 }.forEach { ind ->
+                            laneHead(ind, if (lit(ind)) bright else dim, baseX, bendY, cw, ch, stroke)
+                        }
                     }
                 }
             }

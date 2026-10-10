@@ -1,5 +1,7 @@
 package app.vela.ui.map
 
+import app.vela.core.model.LatLng
+import app.vela.core.model.distanceTo
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -48,6 +50,63 @@ internal fun BoxScope.MapFloaters(state: MapUiState, vm: MapViewModel, sheet: Sh
     if (state.replaying && !state.demoDriving) ReplayControls(state, vm)
     // Only beside its sheet: with the search page up the place stays selected and the sheet is gone.
     if (sheet.shown.value) StreetViewThumb(state, vm, sheet.top)
+
+    // Laze Hazard Alert Banner (navigating or driving)
+    if (state.currentHazardAlert != null) {
+        val dist = state.myLocation?.distanceTo(
+            app.vela.core.model.LatLng(
+                state.currentHazardAlert.latitude,
+                state.currentHazardAlert.longitude
+            )
+        )
+        app.vela.ui.reports.HazardAlertBanner(
+            report = state.currentHazardAlert,
+            distanceMeters = dist,
+            onDismiss = { vm.dismissHazardAlert(state.currentHazardAlert.id) },
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
+    }
+
+    // Laze Quick Report FAB (visible ONLY during active navigation)
+    if (state.navigating && !state.searching && state.streetView == null) {
+        val isRtl = androidx.compose.ui.platform.LocalLayoutDirection.current == androidx.compose.ui.unit.LayoutDirection.Rtl
+        app.vela.ui.reports.ReportFab(
+            onClick = { vm.openReportSheet() },
+            modifier = Modifier
+                .align(if (isRtl) Alignment.BottomStart else Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(
+                    bottom = 124.dp,
+                    start = 16.dp,
+                    end = 16.dp
+                )
+        )
+    }
+
+    // Laze Report Bottom Sheet
+    if (state.showReportSheet) {
+        app.vela.ui.reports.ReportBottomSheet(
+            onDismiss = { vm.closeReportSheet() },
+            onSubmit = { type, severity ->
+                vm.submitRoadReport(type, severity)
+            }
+        )
+    }
+
+    // Laze Report Detail Card
+    if (state.selectedReport != null) {
+        app.vela.ui.reports.ReportDetailCard(
+            report = state.selectedReport,
+            onConfirm = { isStillThere ->
+                vm.confirmRoadReport(state.selectedReport.id, isStillThere)
+            },
+            onDismiss = { vm.selectRoadReport(null) },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp)
+        )
+    }
 }
 
 /** Google's own Street View preview of the open place, above the place card's left corner (beside

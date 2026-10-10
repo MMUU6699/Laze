@@ -81,6 +81,7 @@ internal fun SettingsHub(
             modifier = topRow.fillMaxWidth().padding(vertical = 4.dp).dpadFieldEscape(),
         )
         val sectionTitles = mapOf(
+            SettingsSection.PROFILE to stringResource(R.string.settings_profile),
             SettingsSection.APPEARANCE to stringResource(R.string.settings_appearance),
             SettingsSection.MAP to stringResource(R.string.settings_map),
             SettingsSection.PLACES to stringResource(R.string.settings_places),
@@ -138,10 +139,17 @@ internal fun SettingsHub(
             return m
         }
         HubRow(
+            icon = SymOutlined.Person,
+            title = stringResource(R.string.settings_profile),
+            subtitle = stringResource(R.string.settings_hub_profile_sub),
+            modifier = rowModifier(SettingsSection.PROFILE, first = true),
+            onClick = { onOpen(SettingsSection.PROFILE, null) },
+        )
+        HubRow(
             icon = SymOutlined.Palette,
             title = stringResource(R.string.settings_appearance),
             subtitle = stringResource(R.string.settings_hub_appearance_sub),
-            modifier = rowModifier(SettingsSection.APPEARANCE, first = true),
+            modifier = rowModifier(SettingsSection.APPEARANCE, first = false),
             onClick = { onOpen(SettingsSection.APPEARANCE, null) },
         )
         HubRow(

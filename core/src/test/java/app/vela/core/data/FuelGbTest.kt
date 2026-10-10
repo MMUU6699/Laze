@@ -45,7 +45,7 @@ class FuelGbTest {
     @Test fun trimKeepsOpenPricedForecourtsOnly() {
         // Eight in: permanently closed, no coordinate, and only a 299.9 placeholder are dropped.
         assertEquals(5, data.size)
-        assertTrue(sampleText.startsWith("brand,lat,lng,e10,e5,b7s,b7p,updated\n"))
+        assertTrue(sampleText.replace("\r\n", "\n").startsWith("brand,lat,lng,e10,e5,b7s,b7p,updated\n"))
     }
 
     @Test fun trimBoundsPricesAndCleansBrands() {

@@ -92,9 +92,12 @@ class MainActivity : ComponentActivity() {
                 controller.isAppearanceLightStatusBars = !dark
                 controller.isAppearanceLightNavigationBars = !dark
             }
+            val isRtl = AppLocale.effective().language == "ar"
             androidx.compose.runtime.CompositionLocalProvider(
                 androidx.compose.ui.platform.LocalConfiguration provides
                     (liveConfig.value ?: androidx.compose.ui.platform.LocalConfiguration.current),
+                androidx.compose.ui.platform.LocalLayoutDirection provides
+                    (if (isRtl) androidx.compose.ui.unit.LayoutDirection.Rtl else androidx.compose.ui.unit.LayoutDirection.Ltr),
             ) {
                 VelaTheme(darkTheme = dark) {
                     VelaRoot(vm = vm)
@@ -174,7 +177,12 @@ class MainActivity : ComponentActivity() {
             // A trip pinned to the home screen from the route picker (issue #675).
             app.vela.ui.TripShortcut.ACTION -> app.vela.ui.TripShortcut.read(intent)?.let { (points, mode) -> vm.openTripShortcut(points, mode) }
             Intent.ACTION_VIEW -> {
-                val data = intent.data?.toString() ?: return
+                val dataUri = intent.data ?: return
+                if (dataUri.scheme == "laze" || dataUri.scheme == "app.vela") {
+                    vm.handleAuthCallback(dataUri)
+                    return
+                }
+                val data = dataUri.toString()
                 // A My Maps custom map link imports like a shared list (issue #669).
                 if (MapLinkParser.myMapId(data) != null) vm.openSharedText(data)
                 else MapLinkParser.parse(data)?.let { vm.openDeepLink(it) }

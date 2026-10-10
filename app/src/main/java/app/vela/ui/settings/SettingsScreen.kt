@@ -99,6 +99,7 @@ fun SettingsScreen(vm: MapViewModel, navController: androidx.navigation.NavHostC
                             onOpen = open,
                             onBack = close,
                         )
+                        SettingsSection.PROFILE -> app.vela.ui.profile.ProfileScreen(vm, onBack = toHub)
                         SettingsSection.APPEARANCE -> AppearanceSettingsScreen(vm, onBack = toHub)
                         SettingsSection.MAP -> MapSettingsScreen(onBack = toHub, homeSet = state.home != null)
                         SettingsSection.PLACES -> PlacesSettingsScreen(onBack = toHub)

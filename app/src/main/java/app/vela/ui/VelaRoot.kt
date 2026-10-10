@@ -5,8 +5,10 @@ import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +34,32 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 @Composable
 fun VelaRoot(vm: MapViewModel = hiltViewModel()) {
     val context = LocalContext.current
+
+    val authState by vm.authState.collectAsState()
+
+    when (val state = authState) {
+        is app.vela.core.backend.AuthState.Loading -> {
+            Box(
+                modifier = androidx.compose.ui.Modifier.fillMaxSize(),
+                contentAlignment = androidx.compose.ui.Alignment.Center
+            ) {
+                androidx.compose.material3.CircularProgressIndicator()
+            }
+            return
+        }
+        is app.vela.core.backend.AuthState.Unauthenticated,
+        is app.vela.core.backend.AuthState.Error -> {
+            val errorMsg = (state as? app.vela.core.backend.AuthState.Error)?.message
+            app.vela.ui.profile.LoginScreen(
+                onGoogleSignIn = { vm.signInWithGoogle(context) },
+                errorMessage = errorMsg,
+            )
+            return
+        }
+        is app.vela.core.backend.AuthState.Authenticated -> {
+            // Authorized! Proceed to welcome / map screens.
+        }
+    }
 
     if (!Onboarding.welcomeDone.value) {
         WelcomeScreen(vm, onGetStarted = { Onboarding.completeWelcome(context) })

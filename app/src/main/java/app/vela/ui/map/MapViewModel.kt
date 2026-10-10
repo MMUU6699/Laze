@@ -56,11 +56,14 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -109,6 +112,16 @@ data class LocalSuggestion(
     // geocodes that address and opens the result under the CONTACT'S name (see
     // MapViewModel.openContactAddress); the address string is the only thing that leaves the phone.
     enum class Kind { RECENT_QUERY, RECENT_PLACE, SAVED_PLACE, CONTACT }
+}
+
+enum class RouteLifecycleState {
+    IDLE,
+    RESOLVING_DESTINATION,
+    CALCULATING_ROUTE,
+    ROUTE_READY,
+    STARTING_NAVIGATION,
+    NAVIGATING,
+    ROUTE_ERROR
 }
 
 data class MapUiState(
@@ -229,6 +242,8 @@ data class MapUiState(
     val photosNextToken: String? = null,
     val loadingDetails: Boolean = false, // the lazy WebView detail fetch (popular times etc.) is in flight
     val routes: List<Route> = emptyList(),
+    val routesLoading: Boolean = false,
+    val routeLifecycle: RouteLifecycleState = RouteLifecycleState.IDLE,
     val activeRoute: Route? = null,
     // ALPR/Flock cameras counted near each route option (index-aligned with `routes`), for the route
     // picker's opt-in "passes N cameras" badge. Empty when the alert is off or not yet computed.
@@ -451,6 +466,14 @@ data class MapUiState(
     val cellUpdates: Map<String, List<app.vela.offline.CellStore.Cell>> = emptyMap(), // region id -> installed cells with a newer bake
     val poiPackRegions: List<app.vela.offline.RoutingRegion> = emptyList(), // the pack catalog (revs/deltas)
     val poiPackInstalledRevs: Map<String, Int> = emptyMap(),                // installed pack revision per region
+    // Laze Road Reports & Community Traffic
+    val roadReports: List<app.vela.core.backend.RoadReport> = emptyList(),
+    val selectedReport: app.vela.core.backend.RoadReport? = null,
+    val showReportSheet: Boolean = false,
+    val currentHazardAlert: app.vela.core.backend.RoadReport? = null,
+    val hazardAlertDismissedId: String? = null,
+    val authProfile: app.vela.core.backend.UserProfile? = null,
+    val isGuestUser: Boolean = true,
 )
 
 /**
@@ -499,6 +522,8 @@ class MapViewModel @Inject constructor(
     private val http: okhttp3.OkHttpClient,
     private val selfUpdater: app.vela.update.SelfUpdater,
     private val asrRecognizer: app.vela.voice.AsrRecognizer,
+    private val authRepository: app.vela.core.backend.AuthRepository,
+    private val roadReportRepository: app.vela.core.backend.RoadReportRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MapUiState())
@@ -569,6 +594,87 @@ class MapViewModel @Inject constructor(
                 .collectLatest { r ->
                     if (r != null) { kotlinx.coroutines.delay(1500); runCatching { navSession.prepareStart(r, app.vela.ui.Units.imperial.value) } }
                 }
+        }
+        // Laze: Observe Supabase Auth & Profile state
+        viewModelScope.launch {
+            authRepository.authState.collect { authState ->
+                when (authState) {
+                    is app.vela.core.backend.AuthState.Authenticated -> {
+                        _state.update { it.copy(authProfile = authState.profile, isGuestUser = false) }
+                    }
+                    is app.vela.core.backend.AuthState.Unauthenticated -> {
+                        _state.update { it.copy(authProfile = null, isGuestUser = false) }
+                    }
+                    is app.vela.core.backend.AuthState.Error -> {
+                        _state.update { it.copy(status = authState.message) }
+                    }
+                    else -> Unit
+                }
+            }
+        }
+        // Laze: Observe Road Reports
+        viewModelScope.launch {
+            roadReportRepository.reports.collect { reportsList ->
+                _state.update { it.copy(roadReports = reportsList) }
+                app.vela.ui.reports.LazeReportOverlay.activeReports.value = reportsList
+            }
+        }
+        app.vela.ui.reports.LazeReportOverlay.onReportTap = { report ->
+            selectRoadReport(report)
+        }
+        // Laze: Fetch road reports when center updates (debounced & distance gated to avoid jank)
+        viewModelScope.launch {
+            @OptIn(kotlinx.coroutines.FlowPreview::class)
+            var lastFetchedCenter: LatLng? = null
+            _state.mapNotNull { it.center }
+                .debounce(2500L)
+                .collectLatest { center ->
+                    val last = lastFetchedCenter
+                    if (last == null || last.distanceTo(center) > 2000.0) {
+                        lastFetchedCenter = center
+                        roadReportRepository.fetchNearbyReports(center.lat, center.lng)
+                    }
+                }
+        }
+        // Laze: Real-time hazard monitoring along route during navigation (runs periodically on Default dispatcher)
+        viewModelScope.launch(Dispatchers.Default) {
+            var cachedRoute: app.vela.core.model.Route? = null
+            var cachedPoints: List<Pair<Double, Double>> = emptyList()
+
+            while (isActive) {
+                val s = _state.value
+                if (s.navigating && s.center != null && s.activeRoute != null) {
+                    val here = s.center
+                    val route = s.activeRoute
+                    if (cachedRoute !== route) {
+                        cachedRoute = route
+                        cachedPoints = route.polyline.map { it.lat to it.lng }
+                    }
+                    val nearby = roadReportRepository.findReportsAlongPath(cachedPoints, 200.0)
+                    val nextHazard = nearby.firstOrNull { report ->
+                        val dist = report.distanceMetersTo(here.lat, here.lng)
+                        dist in 50.0..1500.0 && report.id != s.hazardAlertDismissedId
+                    }
+                    if (nextHazard != null && s.currentHazardAlert?.id != nextHazard.id) {
+                        _state.update { it.copy(currentHazardAlert = nextHazard) }
+                        withContext(Dispatchers.Main) {
+                            voice.speak(appContext.getString(R.string.report_nav_alert_title) + ": " + nextHazard.type.titleAr)
+                            if (nextHazard.type == app.vela.core.backend.RoadReportType.CLOSURE ||
+                                nextHazard.type == app.vela.core.backend.RoadReportType.TRAFFIC) {
+                                navSession.forceRecheck()
+                            }
+                        }
+                    } else if (nextHazard == null && s.currentHazardAlert != null) {
+                        val currDist = s.currentHazardAlert.distanceMetersTo(here.lat, here.lng)
+                        if (currDist > 1600.0 || currDist < 20.0) {
+                            _state.update { it.copy(currentHazardAlert = null) }
+                        }
+                    }
+                } else if (!s.navigating && s.currentHazardAlert != null) {
+                    _state.update { it.copy(currentHazardAlert = null) }
+                }
+                delay(3000L)
+            }
         }
         loadAmbientCacheFromDisk() // ambient LRU survives restarts (paint-then-refine)
         warmWebViewsWhenQuiet() // boot the WebView ENGINE at a quiet moment (no Google page), not at the first place tap
@@ -1059,6 +1165,11 @@ class MapViewModel @Inject constructor(
                     )
                 }
                 restartStaleTimer()
+                // Auto-trigger routing when GPS location arrives if directions were opened before location was known
+                val curState = _state.value
+                if (curState.directionsOpen && curState.routes.isEmpty() && !curState.routesLoading && curState.selected != null && curState.directionsOrigin == null) {
+                    route(curState.travelMode)
+                }
                 // Advance transit step-by-step guidance when we reach the current leg's end (no-op off transit).
                 maybeAdvanceTransitNav(here)
                 // Save the fix to the active trip (no-op unless one is recording).
@@ -1223,6 +1334,98 @@ class MapViewModel @Inject constructor(
     // The start view stands in for the phone's position: the first fix takes the camera.
     @Volatile private var startAwaitsFix = false
     private var startHadPermission = true
+
+    // ========================================================================
+    // Laze Road Reports & Community Traffic
+    // ========================================================================
+
+    fun openReportSheet() {
+        _state.update { it.copy(showReportSheet = true) }
+    }
+
+    fun closeReportSheet() {
+        _state.update { it.copy(showReportSheet = false) }
+    }
+
+    fun selectRoadReport(report: app.vela.core.backend.RoadReport?) {
+        _state.update { it.copy(selectedReport = report) }
+    }
+
+    fun submitRoadReport(
+        type: app.vela.core.backend.RoadReportType,
+        severity: app.vela.core.backend.RoadReportSeverity = app.vela.core.backend.RoadReportSeverity.MODERATE,
+        description: String? = null
+    ) {
+        val loc = _state.value.myLocation ?: _state.value.center ?: return
+        viewModelScope.launch {
+            val res = roadReportRepository.submitReport(
+                type = type,
+                latitude = loc.lat,
+                longitude = loc.lng,
+                bearing = null,
+                severity = severity,
+                description = description,
+                roadName = null
+            )
+            res.onSuccess {
+                closeReportSheet()
+                flashStatus(appContext.getString(R.string.report_submitted_success), 4000L)
+            }.onFailure {
+                flashStatus(appContext.getString(R.string.report_submitted_error), 4000L)
+            }
+        }
+    }
+
+    fun confirmRoadReport(reportId: String, isStillThere: Boolean) {
+        viewModelScope.launch {
+            roadReportRepository.confirmReport(reportId, isStillThere)
+            _state.update { it.copy(selectedReport = null) }
+            val msg = if (isStillThere) {
+                appContext.getString(R.string.report_confirmed_thanks)
+            } else {
+                appContext.getString(R.string.report_cleared_thanks)
+            }
+            flashStatus(msg, 3000L)
+        }
+    }
+
+    fun dismissHazardAlert(reportId: String) {
+        _state.update {
+            it.copy(
+                currentHazardAlert = null,
+                hazardAlertDismissedId = reportId
+            )
+        }
+    }
+
+    // ========================================================================
+    // Laze User Profile & Supabase Auth
+    // ========================================================================
+
+    val authState = authRepository.authState
+
+    fun handleAuthCallback(uri: android.net.Uri) {
+        viewModelScope.launch {
+            val success = authRepository.handleAuthCallback(uri)
+            if (success) {
+                flashStatus(appContext.getString(R.string.auth_success), 3000L)
+            }
+        }
+    }
+
+    fun signInWithGoogle(context: Context) {
+        val authUrl = authRepository.buildGoogleOAuthUrl()
+        val browserIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(authUrl))
+        browserIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(browserIntent)
+    }
+
+    fun signOut() {
+        viewModelScope.launch {
+            authRepository.signOut()
+            flashStatus(appContext.getString(R.string.auth_signed_out_msg), 3000L)
+        }
+    }
 
     /**
      * Puts the map on its start view (Settings > Map, "Where the map opens"). The activity calls
@@ -4418,6 +4621,7 @@ class MapViewModel @Inject constructor(
             it.copy(
                 selected = null, placesHere = emptyList(), reviews = emptyList(), reviewsLoading = false, reviewsFound = 0, loadingDetails = false,
                 routes = emptyList(), activeRoute = null, directionsOpen = false,
+                routeLifecycle = RouteLifecycleState.IDLE, status = null,
                 transit = emptyList(), transitLoading = false,
                 showSteps = false, previewStepIndex = null,
                 directionsWaypoints = emptyList(), pickingStop = false,
@@ -4474,6 +4678,7 @@ class MapViewModel @Inject constructor(
         _state.update {
             it.copy(
                 routes = emptyList(), activeRoute = null, directionsOpen = false,
+                routeLifecycle = RouteLifecycleState.IDLE, status = null,
                 transit = emptyList(), transitLoading = false, modeEtas = emptyMap(),
                 showSteps = false, previewStepIndex = null,
                 directionsOrigin = null, pickingOrigin = false, pickingDest = false, directionsReversed = false,
@@ -5402,7 +5607,7 @@ class MapViewModel @Inject constructor(
         voice.neural?.warmUp()
         // Start each directions session clean — don't inherit a custom origin, stops, or
         // pick-mode left over from a previous place's directions.
-        _state.update { it.copy(directionsOpen = true, directionsReversed = false, directionsOrigin = null, pickingOrigin = false, pickingDest = false, directionsWaypoints = emptyList(), pickingStop = false) }
+        _state.update { it.copy(directionsOpen = true, directionsReversed = false, directionsOrigin = null, pickingOrigin = false, pickingDest = false, directionsWaypoints = emptyList(), pickingStop = false, routeLifecycle = RouteLifecycleState.CALCULATING_ROUTE) }
         // Walking back to the car is the parking spot's whole point — default to WALK there.
         // Otherwise every session opens on the STICKY last-used mode (user 2026-07-11).
         val (avTolls, avHighways, avFerries) = stickyAvoid()
@@ -6257,14 +6462,15 @@ class MapViewModel @Inject constructor(
     }
 
     fun setTravelMode(mode: TravelMode) {
-        if (_state.value.travelMode == mode) return
+        val effective = if (mode == TravelMode.TRANSIT) TravelMode.DRIVE else mode
+        if (_state.value.travelMode == effective) return
         // Sticky: the pick becomes the default for the NEXT directions session too (a cyclist
         // shouldn't re-tap Bike every trip; Google remembers the same way). No Settings row -
         // the habit IS the setting (user 2026-07-11).
         appContext.getSharedPreferences("vela_settings", android.content.Context.MODE_PRIVATE)
-            .edit().putString("travel_mode", mode.name).apply()
-        _state.update { it.copy(travelMode = mode) }
-        route(mode)
+            .edit().putString("travel_mode", effective.name).apply()
+        _state.update { it.copy(travelMode = effective) }
+        route(effective)
     }
 
     /** Mirror the chooser's avoid toggles into [app.vela.core.data.RoutingPrefs] so the nav
@@ -6312,10 +6518,11 @@ class MapViewModel @Inject constructor(
 
     /** The remembered last-used travel mode (see [setTravelMode]); DRIVE until first changed. */
     private fun stickyTravelMode(): TravelMode = runCatching {
-        TravelMode.valueOf(
+        val mode = TravelMode.valueOf(
             appContext.getSharedPreferences("vela_settings", android.content.Context.MODE_PRIVATE)
                 .getString("travel_mode", null) ?: return TravelMode.DRIVE,
         )
+        if (mode == TravelMode.TRANSIT) TravelMode.DRIVE else mode
     }.getOrDefault(TravelMode.DRIVE)
 
     /** Set the depart/arrive time for directions (mode 0=now, 1=depart at, 2=arrive by, 3=last available;
@@ -6332,14 +6539,29 @@ class MapViewModel @Inject constructor(
         if (_state.value.travelMode == TravelMode.TRANSIT) route(TravelMode.TRANSIT)
     }
 
-    private fun route(mode: TravelMode) {
+    internal fun route(mode: TravelMode) {
         val s = _state.value
-        val place = s.selected?.location ?: return
+        val effectiveMode = if (mode == TravelMode.TRANSIT) TravelMode.DRIVE else mode
+        val place = s.selected?.location ?: run {
+            _state.update { it.copy(routeLifecycle = RouteLifecycleState.IDLE) }
+            return
+        }
         // The "from" endpoint: a custom origin if set, else your live location.
         val fromPoint = s.directionsOrigin?.location ?: s.myLocation
+        if (fromPoint == null) {
+            _state.update {
+                it.copy(
+                    routes = emptyList(),
+                    routesLoading = false,
+                    routeLifecycle = RouteLifecycleState.ROUTE_ERROR,
+                    status = appContext.getString(R.string.directions_need_location),
+                )
+            }
+            return
+        }
         // reversed → from the place back to the from-point; else → from-point to the place.
-        val origin = (if (s.directionsReversed) place else fromPoint) ?: return
-        val dest = (if (s.directionsReversed) fromPoint else place) ?: return
+        val origin = if (s.directionsReversed) place else fromPoint
+        val dest = if (s.directionsReversed) fromPoint else place
         destination = dest
         // Stops are ALWAYS stored in travel order (swapDirections physically reverses the list), so no
         // per-call reversal here — display, reorder arrows and routing all agree on one order.
@@ -6359,33 +6581,45 @@ class MapViewModel @Inject constructor(
         if (plan == null) linkPlan = null
         val etaKey = modeEtaKeyOf(origin, dest, stops, s.avoidTolls, s.avoidHighways, s.avoidFerries, s.directionsTimeMode, s.directionsTimeEpochSec)
         beginModeEtas(etaKey)
-        if (mode == TravelMode.TRANSIT) { routeTransit(origin, dest, s.directionsTimeMode, s.directionsTimeEpochSec, etaKey); return }
+        if (effectiveMode == TravelMode.TRANSIT) { routeTransit(origin, dest, s.directionsTimeMode, s.directionsTimeEpochSec, etaKey); return }
         // Guard: this reply is only applied if directions is still open for the SAME mode (the user hasn't
         // backed out or switched away while it was fetching). Mirrors routeTransit's stale-load guard.
-        fun stillWanted() = _state.value.directionsOpen && _state.value.travelMode == mode
+        fun stillWanted() = _state.value.directionsOpen && _state.value.travelMode == effectiveMode
         routeJob?.cancel()
         savedRoutesJob?.cancel()
+        _state.update { it.copy(routesLoading = true, routeLifecycle = RouteLifecycleState.CALCULATING_ROUTE, status = null) }
         routeJob = viewModelScope.launch {
             try {
-                val routes = if (plan == null) dataSource.directions(origin, dest, mode, stops, s.avoidTolls, s.avoidHighways, s.avoidFerries)
-                    else dataSource.directions(origin, dest, mode, plan, s.avoidTolls, s.avoidHighways, s.avoidFerries).map { it.copy(detourPlan = plan) }
+                val routes = kotlinx.coroutines.withTimeoutOrNull(25_000L) {
+                    if (plan == null) dataSource.directions(origin, dest, effectiveMode, stops, s.avoidTolls, s.avoidHighways, s.avoidFerries)
+                    else dataSource.directions(origin, dest, effectiveMode, plan, s.avoidTolls, s.avoidHighways, s.avoidFerries).map { it.copy(detourPlan = plan) }
+                } ?: emptyList()
                 if (!stillWanted()) return@launch // backed out / switched mode mid-fetch — don't resurrect it
                 _state.update {
                     it.copy(
                         routes = routes,
+                        routesLoading = false,
+                        routeLifecycle = if (routes.isNotEmpty()) RouteLifecycleState.ROUTE_READY else RouteLifecycleState.ROUTE_ERROR,
                         activeRoute = routes.firstOrNull(),
                         flockOnRoute = emptyList(), // recomputed below when the alert's on
                         transit = emptyList(), transitLoading = false,
-                        status = if (routes.isEmpty()) appContext.getString(R.string.mapvm_no_mode_route_found, mode.name.lowercase()) else null,
+                        status = if (routes.isEmpty()) {
+                            when (effectiveMode) {
+                                TravelMode.DRIVE -> appContext.getString(R.string.mapvm_no_drive_route_found)
+                                TravelMode.WALK -> appContext.getString(R.string.mapvm_no_walk_route_found)
+                                TravelMode.BICYCLE -> appContext.getString(R.string.mapvm_no_bicycle_route_found)
+                                else -> appContext.getString(R.string.car_no_route)
+                            }
+                        } else null,
                     )
                 }
                 // A fetch that found nothing must not leave the Start-pill auto-start armed for
                 // the next, unrelated Directions request.
                 if (routes.isEmpty()) autoStartOnRoute = false
-                shownDuration(routes)?.let { publishModeEta(etaKey, mode, formatDuration(it)) }
-                prefetchModeEtas(etaKey, origin, dest, stops, s.avoidTolls, s.avoidHighways, s.avoidFerries, s.directionsTimeMode, s.directionsTimeEpochSec, except = mode)
+                shownDuration(routes)?.let { publishModeEta(etaKey, effectiveMode, formatDuration(it)) }
+                prefetchModeEtas(etaKey, origin, dest, stops, s.avoidTolls, s.avoidHighways, s.avoidFerries, s.directionsTimeMode, s.directionsTimeEpochSec, except = effectiveMode)
                 val flockEpoch = ++routesEpoch // stamp THIS route set; a newer route() bumps it and stales the flock job
-                if (routes.isNotEmpty()) refreshFlockOnRoute(routes, flockEpoch, origin, dest, mode, stops, s.avoidTolls, s.avoidHighways, s.avoidFerries)
+                if (routes.isNotEmpty()) refreshFlockOnRoute(routes, flockEpoch, origin, dest, effectiveMode, stops, s.avoidTolls, s.avoidHighways, s.avoidFerries)
                 // Warm the region's road-features file while the chooser is up: its first parse
                 // (176k features, 1.5 s on a 4a) used to land in the drive's first seconds beside
                 // the tile workers and the voice (Perfetto 2026-09-28).
@@ -6396,13 +6630,13 @@ class MapViewModel @Inject constructor(
                 // wrong turns/ETA that only "corrected" when Start named it. Name it NOW (OSRM snap +
                 // re-applied traffic), exactly as picking an alternate does, so preview == nav.
                 if (routes.firstOrNull()?.provisional == true) selectRoute(0)
-                if (routes.isNotEmpty() && stops.isEmpty() && plan == null) offerSavedRoutes(origin, dest, mode, s.avoidTolls, s.avoidHighways, s.avoidFerries, ::stillWanted)
+                if (routes.isNotEmpty() && stops.isEmpty() && plan == null) offerSavedRoutes(origin, dest, effectiveMode, s.avoidTolls, s.avoidHighways, s.avoidFerries, ::stillWanted)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e // superseded by a newer route()/cleared — don't touch state on a dead job
             } catch (e: CalibrationNeededException) {
-                if (stillWanted()) _state.update { it.copy(status = appContext.getString(R.string.mapvm_directions_need_recalibration, e.message)) }
+                if (stillWanted()) _state.update { it.copy(routesLoading = false, routeLifecycle = RouteLifecycleState.ROUTE_ERROR, status = appContext.getString(R.string.mapvm_directions_need_recalibration, e.message)) }
             } catch (e: Exception) {
-                if (stillWanted()) _state.update { it.copy(status = appContext.getString(R.string.mapvm_routing_failed_reason, e.message)) }
+                if (stillWanted()) _state.update { it.copy(routesLoading = false, routeLifecycle = RouteLifecycleState.ROUTE_ERROR, status = appContext.getString(R.string.mapvm_routing_failed_reason, e.message)) }
             }
         }
     }
@@ -6452,12 +6686,13 @@ class MapViewModel @Inject constructor(
                     liftedSaved = true
                     continue
                 }
-                val vias = withContext(Dispatchers.Default) { app.vela.core.nav.SavedRoutes.viasAgainst(line, current.first().polyline) }
+                val firstRoute = current.firstOrNull() ?: continue
+                val vias = withContext(Dispatchers.Default) { app.vela.core.nav.SavedRoutes.viasAgainst(line, firstRoute.polyline) }
                 if (vias.isEmpty()) continue
                 val r = runCatching { dataSource.directions(origin, dest, mode, vias, avoidTolls, avoidHighways, avoidFerries) }
                     .getOrDefault(emptyList()).firstOrNull() ?: continue
                 // Still the same route set (a mode switch or an edit replaces it)?
-                if (!stillWanted() || _state.value.routes.firstOrNull()?.polyline !== current.first().polyline) return@launch
+                if (!stillWanted() || _state.value.routes.firstOrNull()?.polyline !== firstRoute.polyline) return@launch
                 // A saved route LEADS the list, selected (user 2026-09-30): it is the way you chose.
                 val mine = r.copy(detourPlan = vias, savedName = saved.name)
                 _state.update { it.copy(routes = listOf(mine) + it.routes, activeRoute = mine) }
@@ -6632,13 +6867,11 @@ class MapViewModel @Inject constructor(
             // auto-avoid. The epoch only bumps on a fresh route(); naming/user-pick keep the same set
             // (same size + order), so the counts still line up index-for-index with _state.routes.
             val cur = _state.value.routes
-            if (routesEpoch != epoch || cur.size != counts.size) return@launch
+            if (routesEpoch != epoch || cur.size != counts.size || cur.isEmpty()) return@launch
             _state.update { it.copy(flockOnRoute = counts) }
-            // Auto-avoid: pick the fewest-camera route (tie → the faster one) IF it beats the fastest on
-            // cameras and costs at most 25% / 10 min more. The cap is where we "draw the line" - a modest
-            // detour to dodge cameras, not a wild one. Long-press "route through here" is the manual override.
             val eta = { r: Route -> r.durationInTrafficSeconds ?: r.durationSeconds }
-            val eta0 = eta(cur[0]) // routes are sorted fastest-first, and cur[0] is the default active
+            val cur0 = cur.firstOrNull() ?: return@launch
+            val eta0 = eta(cur0)
             val cap = minOf(eta0 * 0.25, 600.0)
             if (counts.any { it > 0 }) {
                 // One rule for the pick (`CameraDetour.choose`), shared with the side-street pass below
@@ -6904,10 +7137,8 @@ class MapViewModel @Inject constructor(
     ) {
         modeEtaJob?.cancel()
         val known = modeEtaCache[key].orEmpty()
-        // Cheap OSRM modes first; transit last because it is a hidden-WebView page load.
-        val missing = listOf(TravelMode.DRIVE, TravelMode.WALK, TravelMode.BICYCLE, TravelMode.TRANSIT)
+        val missing = listOf(TravelMode.DRIVE, TravelMode.WALK, TravelMode.BICYCLE)
             .filter { it != except && it !in known }
-            .filter { it != TravelMode.TRANSIT || app.vela.core.data.RoutingPrefs.googleTraffic || googleOff() } // a Google page load, unless the planner answers
         if (missing.isEmpty()) return
         modeEtaJob = viewModelScope.launch {
             for (m in missing) {
@@ -7034,6 +7265,7 @@ class MapViewModel @Inject constructor(
             route(_state.value.travelMode)
             return
         }
+        _state.update { it.copy(routeLifecycle = RouteLifecycleState.STARTING_NAVIGATION) }
         nav.startNav()
     }
     fun stopNav() = nav.stopNav()
@@ -7867,31 +8099,31 @@ class MapViewModel @Inject constructor(
         // hasn't painted yet (cold), hold these two a beat so the POIs place first; warm pans refresh
         // immediately. Gated on the viewport still being live so a fast pan during the wait doesn't
         // stream a stale region.
-        if (_state.value.ambientPois.isEmpty()) {
-            val vp = viewport
-            viewModelScope.launch {
-                kotlinx.coroutines.delay(600)
-                if (viewport === vp) { refreshBuildingOverlays(center); refreshAddressOverlays(center) }
+        val isNav = _state.value.navigating
+        if (!isNav) {
+            if (_state.value.ambientPois.isEmpty()) {
+                val vp = viewport
+                viewModelScope.launch {
+                    kotlinx.coroutines.delay(600)
+                    if (viewport === vp) { refreshBuildingOverlays(center); refreshAddressOverlays(center) }
+                }
+            } else {
+                refreshBuildingOverlays(center) // stream the building overlay for whatever region is now in view
+                refreshAddressOverlays(center) // + house-number labels for that region
             }
-        } else {
-            refreshBuildingOverlays(center) // stream the building overlay for whatever region is now in view
-            refreshAddressOverlays(center) // + house-number labels for that region
+            refreshPlacesOverlays(center)
+            refreshTransitStops(south, west, north, east, zoom) // + canonical GTFS stop icons at street zoom
+            refreshTransitLines(south, west, north, east, zoom) // + rail lines in their own colors, when that layer is on
+            refreshImageryYear(south, west, north, east) // + the capture year for the satellite attribution
+            refreshSatDeep(south, west, north, east, zoom) // + deep-zoom imagery availability (issue #244)
+            val viewRadius = center.distanceTo(LatLng(north, east))
+            maybeLoadAmbientPois(center, zoom, viewRadius)
         }
         refreshMaxspeedOverlay(center) // + the posted-speed-limit overlay (read under the puck for the sign)
-        refreshPlacesOverlays(center)
         refreshTrafficControls(south, west, north, east, zoom) // + traffic lights / stop signs at high zoom
         lastFlockViewport = doubleArrayOf(south, west, north, east, zoom)
         refreshFlock(south, west, north, east, zoom) // + ALPR/Flock cameras when the layer is on
         refreshSpeedCams(south, west, north, east, zoom) // + fixed radar cameras when that layer is on
-        refreshTransitStops(south, west, north, east, zoom) // + canonical GTFS stop icons at street zoom
-        refreshTransitLines(south, west, north, east, zoom) // + rail lines in their own colors, when that layer is on
-        refreshImageryYear(south, west, north, east) // + the capture year for the satellite attribution
-        refreshSatDeep(south, west, north, east, zoom) // + deep-zoom imagery availability (issue #244)
-        // Half-diagonal of the visible box — used to hand the map only the POIs near the view (the
-        // rest can't render anyway), so an old budget phone isn't dragging 800 symbols through the
-        // collider every frame.
-        val viewRadius = center.distanceTo(LatLng(north, east))
-        maybeLoadAmbientPois(center, zoom, viewRadius)
     }
 
     private var ambientJob: Job? = null
@@ -9140,8 +9372,10 @@ class MapViewModel @Inject constructor(
     internal enum class RoadCover { LOADED, NONE, FAILED }
     private suspend fun roadFeaturesCover(s: Double, w: Double, n: Double, e: Double): RoadCover =
         roadCoverOf(app.vela.data.RoadFeatures.ensureBox(appContext, app.vela.BuildConfig.ROAD_FEATURES_MANIFEST_URL, s, w, n, e), (s + n) / 2, (w + e) / 2)
-    private suspend fun roadFeaturesCoverRoute(poly: List<LatLng>): RoadCover =
-        roadCoverOf(app.vela.data.RoadFeatures.ensureAlong(appContext, app.vela.BuildConfig.ROAD_FEATURES_MANIFEST_URL, poly), poly.first().lat, poly.first().lng)
+    private suspend fun roadFeaturesCoverRoute(poly: List<LatLng>): RoadCover {
+        val first = poly.firstOrNull() ?: return RoadCover.NONE
+        return roadCoverOf(app.vela.data.RoadFeatures.ensureAlong(appContext, app.vela.BuildConfig.ROAD_FEATURES_MANIFEST_URL, poly), first.lat, first.lng)
+    }
     private suspend fun roadCoverOf(ok: Boolean, lat: Double, lng: Double): RoadCover =
         if (ok) RoadCover.LOADED
         else if (app.vela.data.RoadFeatures.hasRegion(appContext, app.vela.BuildConfig.ROAD_FEATURES_MANIFEST_URL, lat, lng)) RoadCover.FAILED

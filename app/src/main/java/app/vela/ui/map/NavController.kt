@@ -173,6 +173,7 @@ internal class NavController(
                 _state.update {
                     it.copy(
                         navigating = ns.navigating,
+                        routeLifecycle = if (ns.navigating) RouteLifecycleState.NAVIGATING else if (it.routeLifecycle == RouteLifecycleState.NAVIGATING || it.routeLifecycle == RouteLifecycleState.STARTING_NAVIGATION) RouteLifecycleState.IDLE else it.routeLifecycle,
                         navPaused = ns.paused,
                         // Every drive starts in the chosen orientation (heading-up unless
                         // Settings > Navigation says north-up, or Settings > Map keeps north up).
@@ -593,6 +594,7 @@ internal class NavController(
                 // still shows the route), so the explicit end is where it clears - Ending a
                 // drive used to leave the blue line drawn on the bare map (user 2026-07-14).
                 activeRoute = null, routes = emptyList(), directionsOpen = false,
+                routeLifecycle = RouteLifecycleState.IDLE, status = null,
                 directionsWaypoints = emptyList(), flockOnRoute = emptyList(),
                 // The next drive starts a fresh dictionary: an obf route brings its roads' Latin
                 // aliases with it and the nav tiles add the rest as they load (issue #184).

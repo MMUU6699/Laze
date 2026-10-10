@@ -865,9 +865,9 @@ class GoogleMapsDataSource @Inject constructor(
                 // rest of URGENT_OSRM_TIMEOUT_MS.
                 val viaD = if (phoneFirst) abandonableAsync { viaCall() } else async { viaCall() }
                 // Same urgent grace as the single-destination path below (issue #397).
-                val gD = if (bounded) kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).async {
-                    googleDirectionsRetried(origin, destination, mode, tries, avoidTolls, avoidHighways, avoidFerries, waypoints)
-                } else async { googleDirectionsRetried(origin, destination, mode, tries, avoidTolls, avoidHighways, avoidFerries, waypoints) }
+                val gD = abandonableAsync {
+                    googleDirectionsRetried(origin, destination, mode, tries = 1, avoidTolls, avoidHighways, avoidFerries, waypoints)
+                }
                 // PHONE FIRST for a trip with stops: the legs chained on the downloaded region.
                 val phoneD = if (phoneFirst) {
                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).async {
@@ -915,10 +915,15 @@ class GoogleMapsDataSource @Inject constructor(
                         RerouteFallback.Source.NONE -> emptyList()
                     }
                 }
-                suspend fun googleOrGrace(): List<Route> =
-                    if (urgent && via != null) kotlinx.coroutines.withTimeoutOrNull(URGENT_GOOGLE_GRACE_MS) { gD.await() } ?: emptyList()
-                    else if (bounded) kotlinx.coroutines.withTimeoutOrNull(budget.remainingMs() ?: 0L) { gD.await() } ?: emptyList()
-                    else gD.await()
+                suspend fun googleOrGrace(): List<Route> {
+                    val res = if (urgent && via != null) kotlinx.coroutines.withTimeoutOrNull(URGENT_GOOGLE_GRACE_MS) { gD.await() } ?: emptyList()
+                    else {
+                        val grace = if (via != null) 2_500L else 6_000L
+                        kotlinx.coroutines.withTimeoutOrNull(grace) { gD.await() } ?: emptyList()
+                    }
+                    if (res.isEmpty()) gD.cancel()
+                    return res
+                }
                 // OSRM unreachable → route the legs on-device (origin→w1→…→dest chained), like the
                 // single-destination path's offline fallback; only then fall to Google's DIRECT route
                 // (which reaches the destination but loses the stops).
@@ -968,7 +973,7 @@ class GoogleMapsDataSource @Inject constructor(
                             (avoidWantedHere || gEta <= via.durationSeconds * (cal ?: 1.0) * SNAP_ETA_MARGIN)
                         when {
                             !divergentStops -> { honoredByGoogle = true; listOf(applyTraffic(via, gStops, freeFlowCal = cal)) }
-                            snapKeptStops -> { honoredByGoogle = true; listOf(applyTraffic(snapped!!, gStops, freeFlowCal = cal)) }
+                            snapKeptStops && snapped != null -> { honoredByGoogle = true; listOf(applyTraffic(snapped, gStops, freeFlowCal = cal)) }
                             // Avoid on and the open router could not be led along Google's avoiding
                             // course: Google's own (abbreviated) route through the stops beats a
                             // plain one that ignores the avoid, the single-destination rule.
@@ -1037,9 +1042,9 @@ class GoogleMapsDataSource @Inject constructor(
             // trafficless and the recheck's trafficUpgrade heals it minutes later. (A structured
             // child would keep this scope open until the blocking HTTP call returned, which is the
             // wait this exists to remove; the orphan finishes into the void, like the avoid compute.)
-            val googleD = if (bounded) kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).async {
-                googleDirectionsRetried(origin, destination, mode, tries, avoidTolls, avoidHighways, avoidFerries)
-            } else async { googleDirectionsRetried(origin, destination, mode, tries, avoidTolls, avoidHighways, avoidFerries) }
+            val googleD = abandonableAsync {
+                googleDirectionsRetried(origin, destination, mode, tries = 1, avoidTolls, avoidHighways, avoidFerries)
+            }
             // PHONE FIRST: an urgent reroute over a downloaded region computes the on-device route
             // in parallel and takes it when the open router is not back inside the short wait.
             val phoneD = if (phoneFirst) {
@@ -1114,7 +1119,7 @@ class GoogleMapsDataSource @Inject constructor(
                     RerouteFallback.Source.NONE -> emptyList()
                 }
             }
-            val googleAll = when {
+            val googleAll = (when {
                 urgent && openRaw.isNotEmpty() ->
                     kotlinx.coroutines.withTimeoutOrNull(URGENT_GOOGLE_GRACE_MS) { googleD.await() } ?: run {
                         diag.record("directions", "urgent: google not back ${URGENT_GOOGLE_GRACE_MS} ms after OSRM, rerouting trafficless")
@@ -1129,7 +1134,15 @@ class GoogleMapsDataSource @Inject constructor(
                         emptyList()
                     }
                 }
-                else -> googleD.await()
+                else -> {
+                    val grace = if (openRaw.isNotEmpty()) 2_500L else 6_000L
+                    kotlinx.coroutines.withTimeoutOrNull(grace) { googleD.await() } ?: run {
+                        diag.record("directions", "planning: google not back after ${grace} ms, proceeding with open router")
+                        emptyList()
+                    }
+                }
+            } ?: emptyList()).also {
+                if (it.isEmpty()) googleD.cancel()
             }
             // A REROUTE GOES THE WAY THE CAR IS GOING. Google's request has no heading, so from a
             // car that has just passed a turn its route often starts back the way the car came,
@@ -1504,7 +1517,7 @@ class GoogleMapsDataSource @Inject constructor(
                     hybrid != null -> if (topDivergent) emptyList() else open.drop(1)
                     else -> open
                 }
-                val primary = if (snapWorthIt) (listOf(applyTraffic(trafficRoute!!, gTop, if (hybrid != null) 1.0 else freeFlowCal)) + openOffered.map { applyTraffic(it, gTop, freeFlowCal) })
+                val primary = if (snapWorthIt && trafficRoute != null) (listOf(applyTraffic(trafficRoute, gTop, if (hybrid != null) 1.0 else freeFlowCal)) + openOffered.map { applyTraffic(it, gTop, freeFlowCal) })
                     // Avoid on and the open router's top route already follows Google's avoiding
                     // course: that one route IS the avoiding route, but the open router's OTHER
                     // routes were computed with no avoid at all (it cannot exclude), so they are
@@ -1526,8 +1539,12 @@ class GoogleMapsDataSource @Inject constructor(
                 // — so a route only falls back to raw durationSeconds when there's genuinely no traffic signal
                 // for it, and then showing/sorting that free-flow time is the honest, self-consistent fallback.
                 // Dedupe by path (keeps the fastest of look-alikes) + cap so the picker stays short.
+                val primaryFirst = primary.firstOrNull()
+                val candidateList = (if (primaryFirst != null) listOf(primaryFirst) else emptyList()) +
+                    googleAlts +
+                    (if (primary.size > 1) primary.drop(1) else emptyList())
                 dedupeRoutes(
-                    (listOf(primary.first()) + googleAlts + primary.drop(1))
+                    candidateList
                         .sortedWith(
                             compareBy(
                                 { it.durationInTrafficSeconds ?: it.durationSeconds },

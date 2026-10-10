@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name" translatable="false">Vela Maps</string>
+    <string name="app_name" translatable="false">Laze</string>
     <string name="app_name_generic" translatable="false">Maps</string>
 
     <!-- shared search-category chip labels (map + along-route); the search QUERY stays English in code -->
@@ -29,10 +29,10 @@
     <string name="settings_follow_system">Follow system</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
-    <string name="settings_appearance_hint">Applies to Vela only.</string>
+    <string name="settings_appearance_hint">Applies to Laze only.</string>
     <string name="settings_app_name_title">App name</string>
     <string name="settings_app_name_generic">Call it just “Maps”</string>
-    <string name="settings_app_name_generic_hint">Shows the launcher icon as plain Maps instead of Vela Maps, for a stock look. You may need to re-add a home screen shortcut after switching.</string>
+    <string name="settings_app_name_generic_hint">Shows the launcher icon as plain Maps instead of Laze, for a stock look. You may need to re-add a home screen shortcut after switching.</string>
     <string name="settings_dynamic_color">Material You colors</string>
     <string name="settings_dynamic_color_hint">Tints buttons and accents from your wallpaper. The map stays neutral.</string>
     <string name="settings_map_style">Map style</string>
@@ -792,6 +792,10 @@
     <string name="mapvm_search_failed">Search failed</string>
     <string name="mapvm_dropped_pin">Dropped pin</string>
     <string name="mapvm_no_mode_route_found">No %1$s route found</string> <!-- format -->
+    <string name="mapvm_no_drive_route_found">No drive route found</string>
+    <string name="mapvm_no_walk_route_found">No walking route found</string>
+    <string name="mapvm_no_bicycle_route_found">No cycling route found</string>
+    <string name="directions_need_location">Please enable location or select a starting point</string>
     <string name="mapvm_directions_need_recalibration">Directions need recalibration: %1$s</string> <!-- format -->
     <string name="mapvm_routing_failed_reason">Routing failed: %1$s</string> <!-- format -->
     <string name="mapvm_no_transit_routes">No transit routes found</string>
@@ -1424,4 +1428,76 @@
     <string name="place_avoid_short_ferries">Ferries</string>
     <string name="place_avoid_short_cameras">Cameras</string>
     <string name="trip_shortcut_themed">Match themed icons</string>
+
+    <!-- Laze Community Road Reports -->
+    <string name="report_road_event">Report</string>
+    <string name="report_title">What do you see?</string>
+    <string name="report_type_accident">Crash</string>
+    <string name="report_type_traffic">Traffic Jam</string>
+    <string name="report_type_closure">Closure</string>
+    <string name="report_type_roadwork">Construction</string>
+    <string name="report_type_hazard">Hazard</string>
+    <string name="report_type_breakdown">Breakdown</string>
+    <string name="report_type_flood">Flooding</string>
+    <string name="report_type_camera">Speed Camera</string>
+    <string name="report_send">Send Report</string>
+    <string name="report_submitting">Sending…</string>
+    <string name="report_success">Report sent! Thanks for helping drivers.</string>
+    <string name="report_error">Could not send report. Try again.</string>
+    <string name="report_still_there">Still there</string>
+    <string name="report_cleared">Cleared</string>
+    <string name="report_confirm_thanks">Thanks for updating the map!</string>
+    <string name="report_direction_ahead">Ahead</string>
+    <string name="report_direction_opposite">Opposite direction</string>
+    <string name="report_details_title">Road Report</string>
+    <string name="report_posted_by">Reported by %1$s</string>
+    <string name="report_posted_time">%1$s ago</string>
+    <string name="report_confidence_high">High confidence</string>
+    <string name="report_confidence_medium">Unconfirmed</string>
+    <string name="report_nav_alert_title">Incident Ahead</string>
+    <string name="report_nav_alert_distance">%1$s ahead: %2$s</string>
+    <string name="report_nav_reroute_prompt">Faster route available due to %1$s. Save %2$s min.</string>
+    <string name="report_nav_reroute_accept">Take Route</string>
+    <string name="report_nav_reroute_dismiss">Stay</string>
+
+    <!-- Laze User Profile & Supabase Auth -->
+    <string name="auth_sign_in_title">Sign in to Laze</string>
+    <string name="auth_sign_in_subtitle">Save your places, contribute road reports, and sync your preferences.</string>
+    <string name="auth_google_button">Sign in with Google</string>
+    <string name="auth_continue_guest">Continue as guest</string>
+    <string name="auth_signing_in">Signing in…</string>
+    <string name="auth_success">Signed in successfully!</string>
+    <string name="auth_error">Sign in failed: %1$s</string>
+    <string name="auth_canceled">Sign in canceled.</string>
+    <string name="profile_title">Profile</string>
+    <string name="profile_guest">Guest Driver</string>
+    <string name="profile_reports_count">Reports submitted: %1$d</string>
+    <string name="profile_sign_out">Sign out</string>
+    <string name="profile_sign_out_confirm">Are you sure you want to sign out?</string>
+    <string name="profile_delete_account">Delete account</string>
+    <string name="profile_delete_confirm">This permanently deletes your account and cannot be undone.</string>
+    <string name="settings_profile">Profile &amp; Account</string>
+    <string name="settings_profile_hint">Manage your Laze account and contributions.</string>
+    <string name="settings_hub_profile_sub">Google account, contributions &amp; sync</string>
+    <string name="report_road_hazard">Report road hazard</string>
+    <string name="report_sheet_title">Report Road Incident</string>
+    <string name="report_sheet_subtitle">Help other drivers by reporting what is happening on the road</string>
+    <string name="action_close">Close</string>
+    <string name="report_confirmations_stat">%1$d driver confirmations</string>
+    <string name="report_action_still_there">Still there</string>
+    <string name="report_action_cleared">Cleared</string>
+    <string name="report_submitted_success">Report submitted! Thank you for helping drivers.</string>
+    <string name="report_submitted_error">Failed to submit report. Please try again.</string>
+    <string name="report_confirmed_thanks">Thanks for confirming!</string>
+    <string name="report_cleared_thanks">Thanks for updating the status!</string>
+    <string name="auth_login_title">Sign In to Laze</string>
+    <string name="auth_login_subtitle">Sign in with Google to save your profile and confirm live road reports.</string>
+    <string name="auth_sign_in_google">Sign in with Google</string>
+    <string name="profile_reports_count_label">Reports submitted</string>
+    <string name="auth_sign_out">Sign out</string>
+    <string name="auth_signed_out_msg">Signed out successfully.</string>
+    <string name="backend_config_title">Backend Server Settings</string>
+    <string name="backend_config_subtitle">Configure your Supabase endpoint for live reports and sync.</string>
+    <string name="config_save_btn">Save Settings</string>
+    <string name="config_saved">Settings Saved</string>
 </resources>

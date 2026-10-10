@@ -85,11 +85,8 @@ object Onboarding {
         val locationPromptDone = p.getBoolean("location_prompt_done", false)
         showLocationPrompt.value = welcomeDone.value && !locationPromptDone && !hasLocation(context)
 
-        // Voice prompt: offer the neural voice once, unless it's already downloaded or answered. On a
-        // brand-new install welcomeDone is still false here (welcome not seen yet) → completeWelcome
-        // arms the location step, whose dismissal arms this one.
-        val voicePromptDone = p.getBoolean("voice_prompt_done", false)
-        showVoicePrompt.value = welcomeDone.value && !voicePromptDone && !VelaPiper.isReady(context)
+        // Voice prompt: default off so users are not blocked or nagged to download heavy neural voice models
+        showVoicePrompt.value = false
     }
 
     private fun hasLocation(context: Context): Boolean =
@@ -113,7 +110,7 @@ object Onboarding {
         if (!p.getBoolean("notif_prompt_done", false) && !hasNotifications(context)) {
             showNotifPrompt.value = true
         } else {
-            showVoicePrompt.value = !p.getBoolean("voice_prompt_done", false) && !VelaPiper.isReady(context)
+            showVoicePrompt.value = false
         }
     }
 
@@ -122,7 +119,7 @@ object Onboarding {
         showNotifPrompt.value = false
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         p.edit().putBoolean("notif_prompt_done", true).apply()
-        showVoicePrompt.value = !p.getBoolean("voice_prompt_done", false) && !VelaPiper.isReady(context)
+        showVoicePrompt.value = false
     }
 
     /** Mark the voice prompt handled so it never shows again. It's the last onboarding step. */
@@ -143,7 +140,7 @@ object Onboarding {
         } else if (!p.getBoolean("notif_prompt_done", false) && !hasNotifications(context)) {
             showNotifPrompt.value = true
         } else {
-            showVoicePrompt.value = !p.getBoolean("voice_prompt_done", false) && !VelaPiper.isReady(context)
+            showVoicePrompt.value = false
         }
     }
 

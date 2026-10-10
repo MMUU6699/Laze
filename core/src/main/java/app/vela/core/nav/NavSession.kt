@@ -759,6 +759,10 @@ class NavSession @Inject constructor(
         note("dismissed faster route")
     }
 
+    fun forceRecheck() {
+        lastRecheckMs = 0L
+    }
+
     // --- live re-check ------------------------------------------------------
 
     private fun maybeRecheck(loc: LatLng, nav: NavState) {

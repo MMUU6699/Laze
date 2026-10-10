@@ -78,6 +78,9 @@ private const val HOLD_VIEW_SPAN_M = 2_500.0
 internal const val HOLD_VIEW_HITS_NAME = 1
 internal const val HOLD_VIEW_HITS_KIND = 3
 private const val ROUTE_LAYER = "vela-route"
+private const val ROAD_REPORTS_SRC = "laze-road-reports-src"
+private const val ROAD_REPORTS_LAYER = "laze-road-reports-layer"
+private const val ROAD_REPORTS_OUTER_LAYER = "laze-road-reports-outer-layer"
 
 // The active route stripe's zoom curve (and the alt routes a step thinner): 6 px was constant at
 // every zoom and read THIN at nav zooms next to Google's fat stripe (user 2026-07-15). Values are
@@ -683,6 +686,7 @@ private val osmFillPending = arrayOfNulls<Runnable>(1)
 private var lastControlsVis: String? = null // identity-gate the traffic-control visibility flips
 private val lastRouteProgress = floatArrayOf(0f) // held so a momentary gap never redraws the line un-driven
 private var lastProgressKey: String? = null // which line that held fraction belongs to
+private var lastAppliedRoadReports: List<app.vela.core.backend.RoadReport>? = null
 private var lastAppliedRouteLine: List<LatLng>? = null // identity-gate the route upload — applyData runs
                                                        // every recomposition and re-tessellating a
                                                        // thousands-of-vertices linestring per fix burned
@@ -4165,6 +4169,18 @@ fun VelaMapView(
                             return@handleTap true
                         }
                     }
+                    // Laze Road Reports tap detection
+                    if (map.style?.getLayer(ROAD_REPORTS_LAYER) != null) {
+                        val hitReport = map.queryRenderedFeatures(box, ROAD_REPORTS_LAYER).firstOrNull()
+                        if (hitReport != null) {
+                            val repId = hitReport.getStringProperty("id")
+                            val rep = app.vela.ui.reports.LazeReportOverlay.activeReports.value.firstOrNull { it.id == repId }
+                            if (rep != null) {
+                                app.vela.ui.reports.LazeReportOverlay.onReportTap?.invoke(rep)
+                                return@handleTap true
+                            }
+                        }
+                    }
                     val bldgLayers = (sequenceOf("building", "building-3d") +
                         (map.style?.layers?.asSequence()?.map { it.id }?.filter { it.startsWith("vela-ovl-") }
                             ?: emptySequence())).toList().toTypedArray()
@@ -5756,6 +5772,23 @@ private fun ensureLayers(style: Style) {
                 )
             },
         )
+    }
+
+    if (style.getSource(ROAD_REPORTS_SRC) == null) {
+        style.addSource(GeoJsonSource(ROAD_REPORTS_SRC))
+        val outerLayer = CircleLayer(ROAD_REPORTS_OUTER_LAYER, ROAD_REPORTS_SRC).withProperties(
+            PropertyFactory.circleRadius(14f),
+            PropertyFactory.circleColor(Expression.toColor(Expression.get("color"))),
+            PropertyFactory.circleOpacity(0.35f),
+        )
+        style.addLayer(outerLayer)
+        val innerLayer = CircleLayer(ROAD_REPORTS_LAYER, ROAD_REPORTS_SRC).withProperties(
+            PropertyFactory.circleRadius(9f),
+            PropertyFactory.circleColor(Expression.toColor(Expression.get("color"))),
+            PropertyFactory.circleStrokeWidth(2f),
+            PropertyFactory.circleStrokeColor("#FFFFFF"),
+        )
+        style.addLayer(innerLayer)
     }
 
     if (style.getSource(ROUTE_SRC) == null) {
@@ -9546,6 +9579,31 @@ private fun applyData(
     if (route !== lastAppliedRouteLine && lastAppliedRouteLine?.let { it.size == route.size && it == route } == true) {
         lastAppliedRouteLine = route
     }
+    val activeReports = app.vela.ui.reports.LazeReportOverlay.activeReports.value
+    if (activeReports !== lastAppliedRoadReports) {
+        lastAppliedRoadReports = activeReports
+        val reportFeatures = activeReports.map { r ->
+            val feature = Feature.fromGeometry(Point.fromLngLat(r.longitude, r.latitude))
+            feature.addStringProperty("id", r.id)
+            feature.addStringProperty("type", r.type.apiValue)
+            feature.addStringProperty("title", r.type.titleAr)
+            val colorHex = when (r.type) {
+                app.vela.core.backend.RoadReportType.ACCIDENT -> "#E53935"
+                app.vela.core.backend.RoadReportType.TRAFFIC -> "#FB8C00"
+                app.vela.core.backend.RoadReportType.CLOSURE -> "#D32F2F"
+                app.vela.core.backend.RoadReportType.ROADWORK -> "#F57C00"
+                app.vela.core.backend.RoadReportType.HAZARD -> "#FF5722"
+                app.vela.core.backend.RoadReportType.BREAKDOWN -> "#7B1FA2"
+                app.vela.core.backend.RoadReportType.FLOOD -> "#0288D1"
+                app.vela.core.backend.RoadReportType.SPEED_CAMERA -> "#3949AB"
+            }
+            feature.addStringProperty("color", colorHex)
+            feature
+        }
+        val reportsFc = FeatureCollection.fromFeatures(reportFeatures)
+        style.getSourceAs<GeoJsonSource>(ROAD_REPORTS_SRC)?.setGeoJson(reportsFc)
+    }
+
     if (route !== lastAppliedRouteLine) {
         val routeFc = if (route.size >= 2) {
             FeatureCollection.fromFeature(

@@ -57,6 +57,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import app.vela.ui.place.FLING_COMMIT_DPS
@@ -615,15 +617,14 @@ fun StepRow(
                             .padding(vertical = 12.dp, horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            maneuverIconFor(m),
-                            contentDescription = null,
-                            tint = if (active && !passed) MaterialTheme.colorScheme.primary else ink,
-                            // size + gap must be SEPARATE modifiers: `.size(24).padding(end=16)`
-                            // insets the icon INSIDE the 24 dp box, shrinking the actual glyph to
-                            // ~8 dp (why the step icons looked tiny). Spacer carries the gap.
-                            modifier = Modifier.size(30.dp),
-                        )
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Icon(
+                                maneuverIconFor(m),
+                                contentDescription = null,
+                                tint = if (active && !passed) MaterialTheme.colorScheme.primary else ink,
+                                modifier = Modifier.size(30.dp),
+                            )
+                        }
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
                             val continueLabel = stringResource(R.string.steps_continue)
