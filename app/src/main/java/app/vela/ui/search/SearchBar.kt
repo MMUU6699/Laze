@@ -79,6 +79,8 @@ fun SearchBar(
     onMic: (() -> Unit)? = null,
     /** Opens Your lists. Null hides the button (issue #290 moved it here from the chip row). */
     onOpenLists: (() -> Unit)? = null,
+    avatarUrl: String? = null,
+    onOpenProfile: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // D-pad (docs/dpad.md): mere focus traversal must NOT fall into the text field (its
@@ -124,7 +126,7 @@ fun SearchBar(
         border = if (dark) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
     ) {
         Row(
-            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 6.dp),
+            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // A back arrow while the full-screen search page is open, else the
@@ -208,27 +210,13 @@ fun SearchBar(
                         .focusRequester(fieldFocus)
                         // Unfocusable until armed in dpadMode; untouched otherwise.
                         .focusProperties { canFocus = !dpadMode || fieldArmed }
-                        // Deterministic escape (docs/dpad.md): catch BACK on the focused
-                        // field via onPreviewKeyEvent (root→leaf) + KeyDown, so it fires
-                        // BEFORE BasicTextField's built-in "BACK clears focus" — which
-                        // otherwise blurred the field on the down event and left the KeyUp
-                        // with nothing focused, taking a 3rd press to escape (measured).
-                        // With the IME up, its window still eats the first BACK to hide
-                        // itself; the next BACK reaches here and closes — platform-standard
-                        // two-press behavior, now deterministic.
                         .onPreviewKeyEvent { ev ->
                             when {
-                                // BACK/ESC closes the overlay (see comment above).
                                 dpadMode && onBack != null &&
                                     (ev.key == Key.Back || ev.key == Key.Escape) -> {
                                     if (ev.type == KeyEventType.KeyDown) onBack()
                                     true
                                 }
-                                // DOWN moves focus OUT of the field into the entry rows /
-                                // suggestions below. A single-line BasicTextField otherwise
-                                // swallows DOWN (cursor move), trapping focus on the field so
-                                // the Home/Work/recent/suggestion rows were unreachable by
-                                // D-pad (measured). Explicitly hand focus downward instead.
                                 dpadMode && ev.key == Key.DirectionDown -> {
                                     if (ev.type == KeyEventType.KeyDown) {
                                         focusManager.moveFocus(FocusDirection.Down)
@@ -239,11 +227,6 @@ fun SearchBar(
                             }
                         }
                         .onFocusChanged {
-                            // A focused field is an armed one, however it got its focus. A tap
-                            // focuses it with no arming, and the first key typed on a physical
-                            // keyboard then turns dpadMode on: unarmed, the field was disabled
-                            // under the cursor, focus fell to the back arrow and the rest of
-                            // the word was lost.
                             fieldArmed = it.isFocused
                             onFocusChange(it.isFocused)
                         },
@@ -259,7 +242,7 @@ fun SearchBar(
                 }
             }
             // Quiet offline indicator: a grayed globe-with-a-slash + "Offline", shown when there's no
-            // connection (replaces the old banner). Hidden while typing so it doesn't crowd the clear "X".
+            // connection. Hidden while typing so it doesn't crowd the clear "X".
             if (offline && query.isEmpty() && onBack == null) {
                 val recheckLabel = stringResource(R.string.search_offline_recheck)
                 Row(
@@ -284,22 +267,7 @@ fun SearchBar(
                     )
                 }
             }
-            // Your lists, moved here from the head of the category-chip row (issue #290): there it
-            // sat on the far left competing with the quick-category chips, which is a different
-            // kind of thing. Only on the bare map (onOpenLists != null) and only with the field
-            // empty, so it never crowds the clear button while typing.
-            if (onOpenLists != null && query.isEmpty()) {
-                IconButton(onClick = onOpenLists, modifier = Modifier.size(40.dp)) {
-                    Icon(
-                        SymOutlined.Bookmarks,
-                        contentDescription = stringResource(R.string.mapscreen_section_lists),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            // Voice search mic: only with the field empty (the clear "X" owns the typing state,
-            // Google-style) and only when something can service it (onMic != null). Sits just
-            // before the settings gear.
+            // Voice search mic: only with the field empty
             if (onMic != null && query.isEmpty()) {
                 IconButton(onClick = onMic, modifier = Modifier.size(40.dp)) {
                     Icon(
@@ -310,19 +278,68 @@ fun SearchBar(
                 }
             }
             if (searching) {
-                // padding BEFORE size: sizing the indicator itself to 22dp keeps it a true circle.
-                // The old `.size(22.dp).padding(end=10.dp)` squeezed the arc into a 12x22 box, so it
-                // drew as an ellipse and looked like it was spinning off-axis (user report).
-                CircularProgressIndicator(Modifier.padding(end = 10.dp).size(22.dp), strokeWidth = 2.dp)
-            } else {
-                IconButton(onClick = onOpenSettings) {
-                    // Explicit soft ink: this row is not a Surface, so an untinted Icon fell
-                    // back to LocalContentColor's BLACK and the gear read darker than the mic
-                    // beside it (user 2026-07-11). Glyphs wear onSurfaceVariant, text keeps ink.
-                    Icon(
-                        SymOutlined.Settings,
-                        contentDescription = stringResource(R.string.search_settings_cd),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                CircularProgressIndicator(Modifier.padding(horizontal = 6.dp).size(22.dp), strokeWidth = 2.dp)
+            }
+            // Account / profile avatar button opening menu: Profile, Saved Places, Settings
+            var accountMenuOpen by remember { mutableStateOf(false) }
+            Box {
+                IconButton(
+                    onClick = { accountMenuOpen = true },
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    if (!avatarUrl.isNullOrBlank()) {
+                        coil.compose.AsyncImage(
+                            model = avatarUrl,
+                            contentDescription = stringResource(R.string.search_account_menu_profile),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.size(30.dp).clip(CircleShape),
+                        )
+                    } else {
+                        androidx.compose.material3.Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(30.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Sym.Person,
+                                    contentDescription = stringResource(R.string.search_account_menu_profile),
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                )
+                            }
+                        }
+                    }
+                }
+                androidx.compose.material3.DropdownMenu(
+                    expanded = accountMenuOpen,
+                    onDismissRequest = { accountMenuOpen = false },
+                ) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.search_account_menu_profile)) },
+                        leadingIcon = { Icon(Sym.Person, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = {
+                            accountMenuOpen = false
+                            onOpenProfile?.invoke() ?: onOpenSettings()
+                        },
+                    )
+                    if (onOpenLists != null) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(stringResource(R.string.search_account_menu_saved)) },
+                            leadingIcon = { Icon(Sym.Bookmark, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            onClick = {
+                                accountMenuOpen = false
+                                onOpenLists()
+                            },
+                        )
+                    }
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.search_account_menu_settings)) },
+                        leadingIcon = { Icon(SymOutlined.Settings, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        onClick = {
+                            accountMenuOpen = false
+                            onOpenSettings()
+                        },
                     )
                 }
             }

@@ -14,6 +14,14 @@ import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -277,6 +285,7 @@ fun MapScreen(
     vm: MapViewModel,
     onOpenSettings: () -> Unit,
     onOpenVoiceSettings: () -> Unit = {},
+    onOpenProfile: (() -> Unit)? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val darkTheme = isAppInDarkTheme()
@@ -1488,25 +1497,14 @@ fun MapScreen(
                         onOpenLists = if (state.selected == null && state.results.isEmpty()) {
                             { listsSheetOpen = true }
                         } else null,
+                        avatarUrl = state.authProfile?.avatarUrl,
+                        onOpenProfile = onOpenProfile,
                     )
                     }
                     if (landscapeOneLine) {
-                        // Landscape browse chrome is ONE line, Google-style (user 2026-07-15):
-                        // the search bar takes half the width and the category chips scroll
-                        // beside it, so the top-right corner stack (layers button, compass)
-                        // starts a whole row higher on screens that are already short. With the
-                        // search page open the bar grows to full width IN PLACE (see the
-                        // landscapeOneLine note above - the field must not remount) and the
-                        // chips step aside; the entry page renders full-width below as usual.
+                        // Landscape browse chrome: search bar renders clean without cluttering category chips
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(if (searchOpen) Modifier.fillMaxWidth() else Modifier.weight(1f)) { searchBar() }
-                            if (!searchOpen) {
-                                Spacer(Modifier.width(10.dp))
-                                CategoryChips(
-                                    onPick = vm::quickSearch,
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
+                            Box(Modifier.fillMaxWidth()) { searchBar() }
                         }
                     } else if (!(state.selected != null && placeSheetExpanded && !searchOpen && !landscapeChrome &&
                         sheetEdge.above40.value) &&
@@ -1517,41 +1515,19 @@ fun MapScreen(
                         !(landscapeChrome && resultsShown && !searchOpen) &&
                         !(state.directionsOpen && !searchOpen)
                     ) {
-                        // The expanded-sheet hide is PORTRAIT-only AND measured (2026-07-23): a
-                        // short-content place (no photos, wrap-capped card) flips the LOGICAL
-                        // expanded flag on a pill swipe while the card never grows, and the bar
-                        // vanished for no visible reason (user report, "thought we killed this").
-                        // The 0.40-screen top test only hides the bar when the sheet actually
-                        // reaches up the screen (a real expanded sheet tops out near 0.08).
-                        // In landscape the sheet is the side panel, which caps BELOW the bar
-                        // (PlaceSheet's landscape detents), so the bar deliberately stays -
-                        // hiding it would strand the map strip with no
-                        // search while nothing actually covers the bar.
                         searchBar()
                     }
                     when {
-                        // Show the entry page (Your location, Choose on map, Home/Work, saved, recents)
+                        // Show the entry page (Your location, Choose on map, Home/Work, saved, recents, categories)
                         // when the field is focused, when there are no results yet, OR while picking an
-                        // origin/stop with a blank query. That last case matters: tapping "From" when the
-                        // destination search still had results (plus a place selected) matched NO branch,
-                        // so the picker was BLANK and "Choose on map" was unreachable. Typing a query then
-                        // fills the entry page with suggestions as usual.
+                        // origin/stop with a blank query.
                         searchOpen && (
                             searchFocused || state.results.isEmpty() ||
                                 ((state.pickingOrigin || state.pickingDest || state.pickingStop) && state.query.isBlank())
                             ) -> SearchEntryHost(state, vm, focusManager)
-
-                        // Results now live in a BOTTOM sheet (rendered with the other bottom
-                        // surfaces below, Google-style); the top bar keeps only the category
-                        // chips, and only on the bare map (in landscape they already rendered
-                        // beside the bar above).
-                        !landscapeOneLine && state.selected == null && state.results.isEmpty() -> CategoryChips(
-                            onPick = vm::quickSearch,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
                     }
 
-                    // Quiet offline marker: a small globe-with-a-slash chip tucked just under the category
+                    // Quiet offline marker: a small globe-with-a-slash chip tucked near the search box.
                     // chips, near the search box (pairs with the grayed "Offline" in the bar). Only on the
                     // bare map — the same state the chips show in — so it never trails a results list.
                     if (state.offline && !searchOpen && !state.navigating && !state.replaying &&
@@ -3507,6 +3483,38 @@ private fun SearchResults(
                     },
                 state = listState,
             ) {
+                if (shown.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Icon(
+                                imageVector = Sym.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(48.dp),
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                text = stringResource(R.string.search_no_places_found),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(R.string.search_expand_area),
+                                style = MaterialTheme.typography.bodyMedium,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
                 items(shown) { place ->
                     if (place === shown.firstOrNull()) Spacer(Modifier.fillMaxWidth().height(8.dp).background(if (dark) Color.Black else Color(0xFFE8EAED)))
                     ResultPlaceCard(
@@ -4752,63 +4760,153 @@ private fun SearchEntryHost(state: MapUiState, vm: MapViewModel, focusManager: a
         onUnpinSavedRoute = { vm.setSavedRoutePinned(it.id, false) },
         onRemoveSaved = vm::removeSaved,
         onRenameSaved = vm::renameSaved,
+        onQuickSearch = { query ->
+            focusManager.clearFocus()
+            vm.quickSearch(query)
+        },
     )
 }
 
 @Composable
-private fun CategoryChips(onPick: (String) -> Unit, modifier: Modifier = Modifier) {
-    // (localized label, STABLE English search query, icon) — the query is the logic key sent to Google
-    // search (works in any locale), the label is what the user sees, so the chips localize without
-    // changing what's searched.
-    val categories = app.vela.ui.QuickCategories.all().map { Triple(it.label, it.query, it.icon) }
-    // Settings > Map "Category shortcuts" (issue #654): the row, one chip with a menu, or nothing.
-    when (app.vela.ui.CategoryChipsPref.mode.value) {
-        app.vela.ui.CategoryChipsPref.Mode.HIDDEN -> return
-        app.vela.ui.CategoryChipsPref.Mode.BUTTON -> {
-            var open by remember { mutableStateOf(false) }
-            Box(modifier) {
-                ElevatedAssistChip(
-                    onClick = { open = true },
-                    modifier = Modifier.dpadHighlight(RoundedCornerShape(8.dp)),
-                    label = { Text(stringResource(R.string.cat_menu)) },
-                    leadingIcon = { Icon(Sym.Category, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    shape = CircleShape,
-                )
-                app.vela.ui.VelaMenu(expanded = open, onDismissRequest = { open = false }) {
-                    categories.forEach { (labelRes, query, icon) ->
-                        item(stringResource(labelRes), icon) { open = false; onPick(query) }
+private fun SearchCategoryGrid(
+    onPick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val primaryCategories = remember { app.vela.ui.QuickCategories.primary() }
+    val moreCategories = remember { app.vela.ui.QuickCategories.more() }
+
+    val colorScheme = MaterialTheme.colorScheme
+    val softTints = listOf(
+        colorScheme.primaryContainer to colorScheme.onPrimaryContainer,
+        colorScheme.secondaryContainer to colorScheme.onSecondaryContainer,
+        colorScheme.tertiaryContainer to colorScheme.onTertiaryContainer,
+        colorScheme.surfaceVariant to colorScheme.onSurfaceVariant,
+    )
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) {
+        // Grid 4x2 for the primary 8 categories
+        primaryCategories.chunked(4).forEachIndexed { rowIndex, rowItems ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceAround,
+            ) {
+                rowItems.forEachIndexed { colIndex, chip ->
+                    val tint = softTints[(rowIndex * 4 + colIndex) % softTints.size]
+                    CategoryGridItem(
+                        chip = chip,
+                        containerColor = tint.first,
+                        contentColor = tint.second,
+                        onClick = { onPick(chip.query) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+
+        // Expandable "المزيد" / More section
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                moreCategories.chunked(4).forEachIndexed { _, rowItems ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                    ) {
+                        rowItems.forEachIndexed { colIndex, chip ->
+                            val tint = softTints[(colIndex + 2) % softTints.size]
+                            CategoryGridItem(
+                                chip = chip,
+                                containerColor = tint.first,
+                                contentColor = tint.second,
+                                onClick = { onPick(chip.query) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        val remainder = 4 - rowItems.size
+                        repeat(remainder) {
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
             }
-            return
         }
-        app.vela.ui.CategoryChipsPref.Mode.ROW -> Unit
+
+        // Toggle "المزيد" / "أقل" button
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 2.dp),
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            TextButton(
+                onClick = { expanded = !expanded },
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+            ) {
+                Icon(
+                    imageVector = if (expanded) Sym.ExpandLess else Sym.ExpandMore,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = if (expanded) stringResource(R.string.cat_less) else stringResource(R.string.cat_more),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
     }
-    Row(
-        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+}
+
+@Composable
+private fun CategoryGridItem(
+    chip: app.vela.ui.QuickCategories.Chip,
+    containerColor: Color,
+    contentColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp, horizontal = 2.dp)
+            .defaultMinSize(minWidth = 48.dp, minHeight = 64.dp),
     ) {
-        // Your lists used to lead this row as a round button. It moved into the search bar beside
-        // the settings gear (issue #290): on the far left it competed with the quick-category
-        // chips, which are a different kind of control, and the reach was awkward.
-        categories.forEach { (labelRes, query, icon) ->
-            ElevatedAssistChip(
-                onClick = { onPick(query) },
-                modifier = Modifier.dpadHighlight(RoundedCornerShape(8.dp)),
-                label = { Text(stringResource(labelRes)) },
-                leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                // Full pill, Google-style — the M3 default 8dp corners read dated on a map chip row.
-                shape = androidx.compose.foundation.shape.CircleShape,
-                // MONOCHROME glyphs (user 2026-07-06), SOFT ink (user 2026-07-11): the M3
-                // default tints the icon primary teal; full onSurface made the solid glyph
-                // read DARKER than the label. onSurfaceVariant matches the glyph weight to
-                // the text, like Google's rows.
-                colors = androidx.compose.material3.AssistChipDefaults.elevatedAssistChipColors(
-                    leadingIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(containerColor, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = chip.icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(24.dp),
             )
         }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = stringResource(chip.label),
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 
@@ -4927,6 +5025,7 @@ private fun SearchEntryContent(
     onRemoveRecent: (String) -> Unit,
     onRemoveRecentPlace: (String) -> Unit,
     onClearRecents: () -> Unit,
+    onQuickSearch: (String) -> Unit = {},
     onPickShortcut: (ShortcutKind) -> Unit,
     onAssignShortcut: (ShortcutKind) -> Unit,
     onClearShortcut: (ShortcutKind) -> Unit,
@@ -5062,6 +5161,11 @@ private fun SearchEntryContent(
         // pairs them for the same reason.
         ShortcutPair(home, work, onPickShortcut, onAssignShortcut, onClearShortcut)
         Divider()
+        if (!pickingOrigin && !pickingDest && !pickingStop) {
+            SectionLabel(stringResource(R.string.cat_nearby_title))
+            SearchCategoryGrid(onPick = onQuickSearch)
+            Divider()
+        }
         // Saved routes and runs (issue #622): one tap opens the route chooser on it.
         if (savedRoutes.isNotEmpty() && !pickingOrigin && !pickingDest && !pickingStop) {
             SectionLabel(stringResource(R.string.mapscreen_section_routes))
@@ -5095,10 +5199,25 @@ private fun SearchEntryContent(
             SavedPinTip(onDismissSavedTip)
             Divider()
         }
-        // ONE chronological "Recent" list — Google mixes recently-viewed places and recent
-        // searches by time rather than bucketing them; the icon tells them apart (pin for a
-        // place you opened, clock for a query you typed).
+        // ONE chronological "Recent" list — limited to the last 5 entries with a confirmation on clear
         if (recentPlaces.isNotEmpty() || recents.isNotEmpty()) {
+            var showClearRecentsConfirm by remember { mutableStateOf(false) }
+            if (showClearRecentsConfirm) {
+                app.vela.ui.VelaDialog(
+                    onDismissRequest = { showClearRecentsConfirm = false },
+                    title = stringResource(R.string.mapscreen_clear_recents),
+                    confirmText = stringResource(R.string.mapscreen_clear_recents),
+                    onConfirm = {
+                        showClearRecentsConfirm = false
+                        onClearRecents()
+                    },
+                    dismissText = stringResource(R.string.mapscreen_cancel),
+                    onDismiss = { showClearRecentsConfirm = false },
+                    text = {
+                        Text(stringResource(R.string.search_recents_clear_confirm))
+                    },
+                )
+            }
             SectionLabel(stringResource(R.string.mapscreen_section_recent))
             val merged: List<Any> = (recentPlaces + recents).sortedByDescending { entry ->
                 when (entry) {
@@ -5106,7 +5225,7 @@ private fun SearchEntryContent(
                     is RecentQuery -> entry.at
                     else -> 0L
                 }
-            }
+            }.take(5)
             merged.forEach { entry ->
                 when (entry) {
                     is RecentPlace -> {
@@ -5167,7 +5286,7 @@ private fun SearchEntryContent(
                 }
                 Divider()
             }
-            TextButton(onClick = onClearRecents, modifier = Modifier.padding(start = 8.dp)) {
+            TextButton(onClick = { showClearRecentsConfirm = true }, modifier = Modifier.padding(start = 8.dp)) {
                 Text(stringResource(R.string.mapscreen_clear_recents))
             }
         }

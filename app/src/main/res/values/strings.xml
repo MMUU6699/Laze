@@ -775,7 +775,7 @@
     <!-- search: SearchBar.kt -->
     <string name="search_close_cd">Close search</string>
     <string name="search_fill_cd">Put in search box</string>
-    <string name="search_placeholder">Search</string>
+    <string name="search_placeholder">Where to?</string>
     <string name="search_offline">Offline</string>
     <string name="search_clear_cd">Clear search</string>
     <string name="search_settings_cd">Settings</string>
@@ -1541,4 +1541,15 @@
     <string name="map_detail_buildings_subtitle">Three-dimensional building models</string>
     <string name="map_detail_places">Place Icons</string>
     <string name="map_detail_places_subtitle">Show points of interest and services on the map</string>
+    <string name="cat_mosques">Mosques</string>
+    <string name="cat_more">More</string>
+    <string name="cat_less">Less</string>
+    <string name="cat_nearby_title">Nearby places</string>
+    <string name="search_account_menu_profile">Account</string>
+    <string name="search_account_menu_saved">Saved places</string>
+    <string name="search_account_menu_settings">Settings</string>
+    <string name="search_no_places_found">No nearby places found, try expanding area</string>
+    <string name="search_expand_area">Expand area</string>
+    <string name="search_needs_internet">Internet connection required for places search</string>
+    <string name="search_recents_clear_confirm">Clear recent searches?</string>
 </resources>

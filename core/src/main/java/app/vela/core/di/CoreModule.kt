@@ -132,6 +132,19 @@ object CoreModule {
 
     @Provides
     @Singleton
+    fun placesProvider(
+        okHttpClient: OkHttpClient,
+    ): app.vela.core.places.PlacesProvider {
+        val providers = mutableListOf<app.vela.core.places.PlacesProvider>()
+        if (app.vela.core.BuildConfig.MAPBOX_TOKEN.isNotBlank()) {
+            providers.add(app.vela.core.places.MapboxPlacesProvider(accessTokenProvider = { app.vela.core.BuildConfig.MAPBOX_TOKEN }, client = okHttpClient))
+        }
+        providers.add(app.vela.core.places.OverpassPlacesProvider(client = okHttpClient))
+        return app.vela.core.places.CompositePlacesProvider(providers)
+    }
+
+    @Provides
+    @Singleton
     fun tileProvider(): app.vela.core.tiles.TileProvider =
         app.vela.core.tiles.DynamicTileProvider(app.vela.core.tiles.OpenFreeMapTileProvider())
 }

@@ -151,7 +151,15 @@ class GoogleMapsDataSource @Inject constructor(
     private val routeEngine: RouteEngine,
     routingProvider: app.vela.core.routing.RoutingProvider? = null,
     geocodingProvider: app.vela.core.geocoding.GeocodingProvider? = null,
+    placesProvider: app.vela.core.places.PlacesProvider? = null,
 ) : MapDataSource {
+
+    private val activePlacesProvider: app.vela.core.places.PlacesProvider = placesProvider ?: app.vela.core.places.CompositePlacesProvider(
+        listOfNotNull(
+            if (app.vela.core.BuildConfig.MAPBOX_TOKEN.isNotBlank()) app.vela.core.places.MapboxPlacesProvider(accessTokenProvider = { app.vela.core.BuildConfig.MAPBOX_TOKEN }, client = http) else null,
+            app.vela.core.places.OverpassPlacesProvider(client = http)
+        )
+    )
 
     private val activeRoutingProvider: app.vela.core.routing.RoutingProvider = routingProvider ?: app.vela.core.routing.CompositeRoutingProvider(
         listOfNotNull(
@@ -230,6 +238,15 @@ class GoogleMapsDataSource @Inject constructor(
         if (app.vela.core.data.NoGoogle.enabled) {
             val bias = rankFrom ?: near
             val lang = java.util.Locale.getDefault().language
+
+            // Check category discovery via PlacesProvider (Overpass/Mapbox) first
+            val categoryPlaces = bias?.let { b ->
+                activePlacesProvider.searchNearby(query, b, radiusMeters = 8000.0, limit = 20)
+            }.orEmpty()
+            if (categoryPlaces.isNotEmpty()) {
+                return@io SearchResult(query, categoryPlaces)
+            }
+
             // Photon's own ranking (importance, softly biased to the user) leads, so a city or a
             // landmark across the state is found; the suggest path's hard metro box is appended
             // for the partial-address case. Checked on a device the other way round: the box

@@ -200,6 +200,10 @@ fun VelaRoot(vm: MapViewModel = hiltViewModel()) {
                 navController.navigate(app.vela.ui.settings.SettingsSection.VOICE.route)
                 navController.currentBackStackEntry?.savedStateHandle?.set("openLibrary", true)
             },
+            onOpenProfile = {
+                openSettings()
+                navController.navigate(app.vela.ui.settings.SettingsSection.PROFILE.route)
+            },
         )
         SettingsScreen(vm = vm, navController = navController)
         if (!showSettings) {

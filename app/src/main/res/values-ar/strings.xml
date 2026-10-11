@@ -724,7 +724,7 @@
     <string name="welcome_donate_dismiss">لاحقاً</string>
     <string name="search_close_cd">إغلاق البحث</string>
     <string name="search_fill_cd">وضع في مربع البحث</string>
-    <string name="search_placeholder">بحث</string>
+    <string name="search_placeholder">إلى أين؟</string>
     <string name="search_offline">دون اتصال</string>
     <string name="search_clear_cd">مسح البحث</string>
     <string name="search_settings_cd">الإعدادات</string>
@@ -1496,4 +1496,15 @@
     <string name="map_detail_buildings_subtitle">مجسمات المباني بالأبعاد الثلاثية</string>
     <string name="map_detail_places">أسماء الأماكن</string>
     <string name="map_detail_places_subtitle">إظهار أيقونات المعالم والخدمات على الخريطة</string>
+    <string name="cat_mosques">جوامع</string>
+    <string name="cat_more">المزيد</string>
+    <string name="cat_less">أقل</string>
+    <string name="cat_nearby_title">أماكن قريبة</string>
+    <string name="search_account_menu_profile">الحساب</string>
+    <string name="search_account_menu_saved">الأماكن المحفوظة</string>
+    <string name="search_account_menu_settings">الإعدادات</string>
+    <string name="search_no_places_found">لم نجد أماكن قريبة، جرّب توسيع المنطقة</string>
+    <string name="search_expand_area">توسيع المنطقة</string>
+    <string name="search_needs_internet">تحتاج اتصالاً بالإنترنت للبحث عن الأماكن</string>
+    <string name="search_recents_clear_confirm">مسح سجل البحث الأخير؟</string>
 </resources>
