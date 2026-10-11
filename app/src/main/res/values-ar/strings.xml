@@ -1486,6 +1486,7 @@
     <string name="onboarding_voice_ready_desc">التوجيه الصوتي جاهز للاستخدام ومربوط بمحرك الصوت في هاتفك.</string>
     <string name="onboarding_voice_setup_needed">تثبيت الصوت العربي</string>
     <string name="onboarding_voice_setup_desc">لسماع إرشادات الطرق والتنبيهات بالعربية، يرجى تثبيت حزمة الصوت العربي من إعدادات تحويل النص إلى كلام.</string>
+    <string name="nav_voice_unavailable_hint">الصوت غير متاح: تحقق من إعدادات تحويل النص إلى كلام</string>
     <string name="map_layers_sheet_title">الخريطة</string>
     <string name="map_type_title">نوع الخريطة</string>
     <string name="map_type_default">افتراضية</string>

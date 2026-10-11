@@ -1531,6 +1531,7 @@
     <string name="onboarding_voice_ready_desc">Voice navigation is ready and powered by your system speech engine.</string>
     <string name="onboarding_voice_setup_needed">Arabic Voice Setup Needed</string>
     <string name="onboarding_voice_setup_desc">To hear Arabic turn-by-turn directions, install Arabic voice data in your device speech settings.</string>
+    <string name="nav_voice_unavailable_hint">Voice guidance unavailable: check Text-to-Speech settings</string>
     <string name="map_layers_sheet_title">Map</string>
     <string name="map_type_title">Map Type</string>
     <string name="map_type_default">Default</string>

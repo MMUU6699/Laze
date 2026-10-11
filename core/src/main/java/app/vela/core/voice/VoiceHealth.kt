@@ -27,6 +27,7 @@ data class VoiceHealthStatus(
     val detailMessage: String = "",
 ) {
     val isReady: Boolean get() = level == VoiceHealthLevel.READY
+    val canSpeak: Boolean get() = level == VoiceHealthLevel.READY || level == VoiceHealthLevel.OFFLINE_MISSING || isArabicSupported
 }
 
 /**

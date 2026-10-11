@@ -296,17 +296,34 @@ class VoiceGuide @Inject constructor(
         last?.let { (text, interrupt) -> speakNow(text, interrupt) }
     }
 
-    /** Pick the highest-quality voice for [lang] that works offline. */
+    /** Pick the highest-quality voice for [lang] following the required fallback hierarchy:
+     *  1. System default voice for [lang] if available.
+     *  2. Highest quality offline voice for [lang].
+     *  3. Highest quality network voice for [lang] (works immediately without prompting downloads).
+     *  4. Engine default via setLanguage if no specific Voice object matched.
+     */
     private fun selectBestVoice(t: TextToSpeech, lang: Locale) {
         runCatching {
-            val best = t.voices.orEmpty()
-                .filter {
-                    it.locale.language == lang.language &&
-                        !it.isNetworkConnectionRequired &&
-                        it.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) != true
-                }
-                .maxByOrNull { it.quality }
-            if (best != null) t.voice = best
+            val defaultVoice = runCatching { t.defaultVoice }.getOrNull()
+            if (defaultVoice != null && defaultVoice.locale.language == lang.language) {
+                t.voice = defaultVoice
+                return
+            }
+            val all = t.voices.orEmpty().filter { it.locale.language == lang.language }
+            val offline = all.filter {
+                !it.isNetworkConnectionRequired &&
+                    it.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) != true
+            }
+            val bestOffline = offline.maxByOrNull { it.quality }
+            if (bestOffline != null) {
+                t.voice = bestOffline
+                return
+            }
+            val bestNetwork = all.maxByOrNull { it.quality }
+            if (bestNetwork != null) {
+                t.voice = bestNetwork
+                return
+            }
         }
     }
 

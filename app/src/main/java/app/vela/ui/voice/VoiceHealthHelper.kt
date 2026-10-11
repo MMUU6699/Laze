@@ -44,7 +44,33 @@ object VoiceHealthHelper {
         }
 
         var probeTts: TextToSpeech? = null
+        val handler = Handler(Looper.getMainLooper())
+        var finished = false
+        val timeoutRunnable = Runnable {
+            if (!finished) {
+                finished = true
+                val targetEngine = enginePackage ?: installedEngines.firstOrNull()?.serviceInfo?.packageName
+                val engineLabel = installedEngines.firstOrNull { it.serviceInfo?.packageName == targetEngine }
+                    ?.loadLabel(pm)?.toString() ?: targetEngine
+                val eval = VoiceHealthEvaluator.evaluate(
+                    initStatus = VoiceHealthEvaluator.SUCCESS,
+                    hasInstalledEngines = true,
+                    langAvailCode = VoiceHealthEvaluator.LANG_AVAILABLE,
+                    offlineArabicVoiceCount = 0,
+                    totalArabicVoiceCount = 1,
+                    enginePackage = targetEngine,
+                    engineLabel = engineLabel,
+                )
+                onResult(eval)
+                runCatching { probeTts?.shutdown() }
+            }
+        }
+        handler.postDelayed(timeoutRunnable, 2000L)
+
         val listener = TextToSpeech.OnInitListener { status ->
+            if (finished) return@OnInitListener
+            finished = true
+            handler.removeCallbacks(timeoutRunnable)
             val tts = probeTts
             val targetEngine = enginePackage ?: tts?.defaultEngine
             val engineLabel = installedEngines.firstOrNull { it.serviceInfo?.packageName == targetEngine }
@@ -59,7 +85,7 @@ object VoiceHealthHelper {
                     enginePackage = targetEngine,
                     engineLabel = engineLabel,
                 )
-                Handler(Looper.getMainLooper()).post {
+                handler.post {
                     onResult(eval)
                 }
                 runCatching { probeTts?.shutdown() }
@@ -88,7 +114,7 @@ object VoiceHealthHelper {
                 engineLabel = engineLabel,
             )
 
-            Handler(Looper.getMainLooper()).post {
+            handler.post {
                 onResult(eval)
             }
 

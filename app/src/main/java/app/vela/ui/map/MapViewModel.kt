@@ -833,7 +833,12 @@ class MapViewModel @Inject constructor(
                 lastVoiceLangHinted = lang
                 if (lang.startsWith("ar")) {
                     app.vela.ui.voice.VoiceHealthHelper.checkVoiceHealth(appContext) { health ->
-                        _state.update { it.copy(showVoiceHealthDialog = true, voiceHealthStatus = health) }
+                        if (!health.canSpeak) {
+                            val msg = appContext.getString(R.string.nav_voice_unavailable_hint)
+                            viewModelScope.launch(Dispatchers.Main) {
+                                flashStatus(msg, 12_000L, voiceAction = true, ttsSettings = true)
+                            }
+                        }
                     }
                 } else {
                     val endonym = app.vela.ui.AppLocale.endonym(lang)
@@ -7412,8 +7417,10 @@ class MapViewModel @Inject constructor(
         _state.update { it.copy(routeLifecycle = RouteLifecycleState.STARTING_NAVIGATION) }
         if (!_state.value.voiceMuted && app.vela.core.i18n.NavStringsRegistry.current().locale.language.startsWith("ar")) {
             val health = voice.checkCurrentVoiceHealth("ar")
-            if (!health.isReady) {
-                _state.update { it.copy(showVoiceHealthDialog = true, voiceHealthStatus = health) }
+            if (!health.canSpeak && health.level != app.vela.core.voice.VoiceHealthLevel.INIT_FAILED) {
+                viewModelScope.launch(Dispatchers.Main) {
+                    showStatus(appContext.getString(R.string.nav_voice_unavailable_hint))
+                }
             }
         }
         nav.startNav()

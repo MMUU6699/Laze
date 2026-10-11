@@ -263,7 +263,9 @@ private fun VoicePrompt(
         }
     }
 
-    val isReady = health?.isReady == true
+    val currentHealth = health ?: return
+
+    val isReady = currentHealth.canSpeak
     val title = if (isReady) {
         stringResource(R.string.onboarding_voice_ready_title)
     } else {
