@@ -183,11 +183,7 @@ class RoutePreviewCarScreen(
             val savedRaw = carContext.applicationContext
                 .getSharedPreferences("vela_settings", android.content.Context.MODE_PRIVATE)
                 .getString("voice_engine", null)
-            val engine = when {
-                savedRaw == null || savedRaw.startsWith("vela.") ->
-                    if (app.vela.core.voice.VelaPiper.isReady(carContext.applicationContext)) app.vela.core.voice.VelaPiper.ENGINE_ID else null
-                else -> savedRaw
-            }
+            val engine = if (savedRaw != null && !savedRaw.startsWith("vela.")) savedRaw else null
             deps.navSession.start(named, dest, destName, engine, emptyList(), TravelMode.DRIVE)
             runCatching { NavigationService.start(carContext.applicationContext) }
             // VelaCarSession opens the drive screen when the session reports the drive.

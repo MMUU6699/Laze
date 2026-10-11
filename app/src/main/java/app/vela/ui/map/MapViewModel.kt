@@ -35,14 +35,8 @@ import app.vela.core.model.bearingTo
 import app.vela.core.model.distanceTo
 import app.vela.core.nav.NavSession
 import app.vela.core.nav.NavState
-import app.vela.core.voice.PiperCatalog
-import app.vela.core.voice.PiperVoice
-import app.vela.core.voice.VelaPiper
 import app.vela.core.voice.VoiceEngine
 import app.vela.core.voice.VoiceGuide
-import app.vela.voice.KokoroInstaller
-import app.vela.voice.PiperSynth
-import app.vela.voice.VoiceInstaller
 import app.vela.service.NavigationService
 import app.vela.core.model.TransitItinerary
 import app.vela.core.model.TransitStep
@@ -376,20 +370,10 @@ data class MapUiState(
     val status: String? = null,
     val statusVoiceAction: Boolean = false, // status is a voice problem -> show the Get-a-voice pill
     val statusOpensTtsSettings: Boolean = false, // the pill opens the SYSTEM voice settings, not Vela's library
-    val statusVoiceDownloadId: String? = null, // the pill downloads THIS voice (the language's recommended one)
     val statusAutoMs: Long? = null, // the card drains a bar over this and dismisses itself; null = stays until dismissed
     val installingEngine: String? = null, // pkg of the voice engine currently downloading
-    val voiceDownloadPct: Float? = null, // 0f..1f while the neural-voice model downloads; null = idle
-    val installedVoiceIds: Set<String> = emptySet(), // Piper voices present on disk (the voice browser)
-    val selectedVoiceId: String? = null, // the active Piper voice id (null = none installed)
-    val voiceDownloadingId: String? = null, // the ONE voice currently downloading (one-at-a-time), else null
-    val voiceInstalling: Boolean = false,   // download done, unpacking the archive (the map card shows "Installing…")
-    val asrDownloadPct: Float? = null,      // 0f..1f while an on-device voice-search engine downloads; null = idle
-    val asrInstalling: Boolean = false,     // ASR download done, unpacking
-    val asrDownloadingId: String? = null,   // which AsrEngine.id is downloading (Settings row shows progress on it), else null
-    val asrInstalledIds: Set<String> = emptySet(), // which voice-search engines are on disk (Whisper/SenseVoice/Moonshine)
-    val asrActiveId: String = app.vela.voice.AsrEngine.DEFAULT.id, // the engine the mic will use
-    val voiceSpeaker: Int = 0, // chosen speaker # for the multi-speaker Vela voice (playground stepper)
+    val iraqiDialectEnabled: Boolean = true,
+    val voiceSpeaker: Int = 0,
     val voiceSpeed: Float = 1.0f, // spoken-directions speed multiplier (1.0 = normal, >1 = faster)
     val showPsdsTip: Boolean = false,
     /** The no-fix tip should point at network location: the phone has none switched on. */
@@ -490,9 +474,6 @@ class MapViewModel @Inject constructor(
     private val locationProvider: LocationProvider,
     private val headingProvider: app.vela.core.location.HeadingProvider,
     private val voice: VoiceGuide,
-    private val voiceInstaller: VoiceInstaller,
-    private val kokoroInstaller: KokoroInstaller,
-    private val piperSynth: PiperSynth,
     private val navSession: NavSession,
     private val recentStore: RecentSearchStore,
     private val recentPlaceStore: RecentPlaceStore,
@@ -523,7 +504,6 @@ class MapViewModel @Inject constructor(
     private val routeEngine: app.vela.core.data.RouteEngine,
     private val http: okhttp3.OkHttpClient,
     private val selfUpdater: app.vela.update.SelfUpdater,
-    private val asrRecognizer: app.vela.voice.AsrRecognizer,
     private val authRepository: app.vela.core.backend.AuthRepository,
     private val roadReportRepository: app.vela.core.backend.RoadReportRepository,
     private val trafficProbeRepository: app.vela.core.backend.TrafficProbeRepository,
@@ -579,7 +559,6 @@ class MapViewModel @Inject constructor(
             this@MapViewModel.passAlert(here, speedMps, android.os.SystemClock.elapsedRealtime())
         override fun clearSpeedLimit() = this@MapViewModel.clearSpeedLimit()
         override fun clearSelection() = this@MapViewModel.clearSelection()
-        override fun neuralSynthFor(engineId: String?): PiperSynth? = this@MapViewModel.neuralSynthFor(engineId)
         override suspend fun nameIfNeeded(route: Route): Route = this@MapViewModel.nameIfNeeded(route)
         override suspend fun roadFeaturesCoverRoute(poly: List<LatLng>): RoadCover = this@MapViewModel.roadFeaturesCoverRoute(poly)
         override fun sanePosition(here: LatLng, prev: LatLng?, lastSpeed: Float?, dt: Double, outlierStreak: IntArray): LatLng =
@@ -833,27 +812,18 @@ class MapViewModel @Inject constructor(
                 _state.update { it.copy(poiPackInstalledIds = poiPackStore.installedIds(), cellsInstalled = cellStore.installed()) }
             }
         }
-        // Reclaim disk from the removed Kokoro/Matcha voices (up to ~500 MB of dead model files after
-        // the Piper-only switch). Off the main thread; a no-op once the dirs are gone.
+        // Clean up legacy voice folders if present
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
                 java.io.File(appContext.filesDir, "kokoro").deleteRecursively()
                 java.io.File(appContext.filesDir, "matcha").deleteRecursively()
+                java.io.File(appContext.filesDir, "piper").deleteRecursively()
+                java.io.File(appContext.filesDir, "asr").deleteRecursively()
             }
         }
-        // Relocate any pre-browser flat Piper install (filesDir/piper/*.onnx) into the per-voice subdir
-        // layout the voice browser expects — synchronous, rename-only (no re-download), crash-safe.
-        VelaPiper.migrateFlatLayoutIfNeeded(appContext)
-        // Restore the saved voice; default to the downloaded Piper voice.
         val savedRaw = appContext.getSharedPreferences("vela_settings", Context.MODE_PRIVATE)
             .getString("voice_engine", null)
-        val savedEngine = when {
-            // A stale neural id from a removed voice (vela.kokoro / vela.matcha) → our Piper voice.
-            savedRaw == null || savedRaw.startsWith("vela.") ->
-                if (VelaPiper.isReady(appContext)) VelaPiper.ENGINE_ID else null
-            else -> savedRaw // a system TTS engine the user picked
-        }
-        neuralSynthFor(savedEngine)?.let { voice.neural = it }
+        val savedEngine = if (savedRaw != null && !savedRaw.startsWith("vela.")) savedRaw else null
         // When guidance can't speak the app/system language (the neural voice is a different
         // language AND no system TTS voice exists for it) — e.g. the user set the app language to
         // Russian but only has the English voice — VoiceGuide stays silent (never mangles it) and
@@ -867,44 +837,33 @@ class MapViewModel @Inject constructor(
                     }
                 } else {
                     val endonym = app.vela.ui.AppLocale.endonym(lang)
-                    val hasVela = app.vela.core.voice.PiperCatalog.hasVoiceFor(lang)
-                    val msg = appContext.getString(
-                        if (hasVela) R.string.mapvm_voice_lang_missing else R.string.mapvm_voice_lang_system,
-                        endonym,
-                    )
-                    val voiceId = if (hasVela) app.vela.core.voice.PiperCatalog.defaultFor(lang).id else null
+                    val msg = appContext.getString(R.string.mapvm_voice_lang_system, endonym)
                     viewModelScope.launch(Dispatchers.Main) {
-                        flashStatus(msg, 15_000L, voiceAction = true, ttsSettings = !hasVela, voiceDownloadId = voiceId)
+                        flashStatus(msg, 15_000L, voiceAction = true, ttsSettings = true)
                     }
                 }
             }
         }
         voice.init(savedEngine) // null → default system TTS; also warms the engine list for Settings
         if (savedEngine != null) {
-            val label = velaLabel(savedEngine)
-                ?: voice.availableEngines().firstOrNull { it.packageName == savedEngine }?.label ?: savedEngine
+            val label = voice.availableEngines().firstOrNull { it.packageName == savedEngine }?.label ?: savedEngine
             _state.update { it.copy(selectedEngine = VoiceEngine(savedEngine, label)) }
         }
-        // The neural voice loads when the route chooser opens (warmVoiceForRoute), not at launch: it
-        // holds its model for the whole session, and a drive always passes through the chooser a few
-        // seconds before the first spoken prompt.
         val voicePrefs = appContext.getSharedPreferences("vela_settings", Context.MODE_PRIVATE)
         val savedSpeed = voicePrefs.getFloat("voice_speed", calibration.current().defaultVoiceSpeed)
         voice.setRate(savedSpeed) // relay the saved rate to the AOSP TTS engine at startup
         voice.setVolume(voicePrefs.getFloat("voice_volume", 1.0f)) // + the guidance volume (issue #245)
+        val isIraqi = app.vela.ui.voice.IraqiVoicePref.isEnabled(appContext)
+        voice.iraqiDialect = isIraqi
         // Spoken directions on/off is PERSISTENT: the Settings toggle and the in-nav mute
         // button share the one pref, so a muted choice survives restarts.
         if (!voicePrefs.getBoolean("spoken_directions", true)) {
             voice.muted = true
             _state.update { it.copy(voiceMuted = true) }
         }
-        val installedVoices = VelaPiper.installedVoiceIds(appContext)
-        val activeVoice = VelaPiper.effectiveVoiceId(appContext)
         _state.update {
             it.copy(
-                installedVoiceIds = installedVoices.toSet(),
-                selectedVoiceId = activeVoice,
-                voiceSpeaker = savedSpeakerFor(activeVoice),
+                iraqiDialectEnabled = isIraqi,
                 voiceSpeed = savedSpeed,
                 recents = recentStore.recent(), saved = savedStore.saved(), savedRoutes = savedRouteStore.all(),
                 recentPlaces = recentPlaceStore.recent(),
@@ -1930,13 +1889,9 @@ class MapViewModel @Inject constructor(
     // these per chunk (`active` param) and abort into their normal failure cleanup; the flag is
     // reset at the START of each download so a stale cancel can't kill the next one. Canceled
     // downloads suppress the "failed" toast - the card disappearing IS the feedback.
-    private val voiceCancel = java.util.concurrent.atomic.AtomicBoolean(false)
-    private val asrCancel = java.util.concurrent.atomic.AtomicBoolean(false)
     private val regionCancel = java.util.concurrent.atomic.AtomicBoolean(false)
     private val updateCancel = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    fun cancelVoiceDownload() = voiceCancel.set(true)
-    fun cancelAsrDownload() = asrCancel.set(true)
     fun cancelRegionDownload() {
         regionQueue.clear()
         _state.update { it.copy(regionQueueLeft = 0, regionQueueTotal = 0) }
@@ -3458,7 +3413,6 @@ class MapViewModel @Inject constructor(
         }
         syncRoutingAvoid()
         syncRouteTraffic()
-        voice.neural?.warmUp() // the drive's opener should not wait on the voice loading
         fun mark(update: (LinkTrip.View) -> LinkTrip.View) { LinkTrip.view.value = LinkTrip.view.value?.let(update) }
         fun found(p: Place?) = if (p != null) LinkTrip.Lookup.FOUND else LinkTrip.Lookup.NOT_FOUND
         linkTripJob = viewModelScope.launch {
@@ -5728,9 +5682,6 @@ class MapViewModel @Inject constructor(
         val sel = _state.value.selected ?: return
         // A custom map's planned route: Directions opens the trip through its stops.
         if (sel.id.startsWith("shape:")) openedShape?.takeIf { it.stops.size >= 2 }?.let { openShapeTrip(it); return }
-        // The chooser opens seconds before Start: load the neural voice now (it no longer loads at
-        // launch), so the "Starting navigation" opener is not waiting on it.
-        voice.neural?.warmUp()
         // Start each directions session clean — don't inherit a custom origin, stops, or
         // pick-mode left over from a previous place's directions.
         _state.update { it.copy(directionsOpen = true, directionsReversed = false, directionsOrigin = null, pickingOrigin = false, pickingDest = false, directionsWaypoints = emptyList(), pickingStop = false, routeLifecycle = RouteLifecycleState.CALCULATING_ROUTE) }
@@ -7902,14 +7853,7 @@ class MapViewModel @Inject constructor(
 
     fun voiceEngines(): List<VoiceEngine> = voice.availableEngines()
 
-    /** The in-process synth backing a Vela neural engine id (else null for a system TTS engine). */
-    private fun neuralSynthFor(engineId: String?): PiperSynth? =
-        if (engineId == VelaPiper.ENGINE_ID) piperSynth else null
-    private fun velaLabel(engineId: String): String? =
-        if (engineId == VelaPiper.ENGINE_ID) VelaPiper.LABEL else null
-
     fun setVoiceEngine(e: VoiceEngine) {
-        neuralSynthFor(e.packageName)?.let { voice.neural = it; it.warmUp() } // point VoiceGuide at the right synth
         voice.init(e.packageName) // re-init now so the pick applies + a test plays through it
         settingsPrefs.edit().putString("voice_engine", e.packageName).apply() // survive restart
         _state.update { it.copy(selectedEngine = e) }
@@ -7917,330 +7861,64 @@ class MapViewModel @Inject constructor(
 
     fun testVoice() = voice.test()
 
-    /** Whether a Vela neural voice model is downloaded + usable. */
-    fun neuralVoiceInstalled(): Boolean = VelaPiper.isReady(appContext)
-    fun piperInstalled(): Boolean = VelaPiper.isReady(appContext)
+    fun testVoicePrompt() {
+        val sample = appContext.getString(R.string.voice_sample_iraqi_test)
+        voice.speak(sample, interrupt = true)
+    }
 
-    /** Voice playground: speak arbitrary text through the currently-selected voice. Bypasses the
-     *  spoken-directions mute - tapping Speak IS the request for sound. */
+    fun setIraqiDialect(enabled: Boolean) {
+        app.vela.ui.voice.IraqiVoicePref.setEnabled(appContext, enabled)
+        voice.iraqiDialect = enabled
+        _state.update { it.copy(iraqiDialectEnabled = enabled) }
+    }
+
+    fun isIraqiDialect(): Boolean = _state.value.iraqiDialectEnabled
+
+    /** Voice playground: speak arbitrary text through the currently-selected voice. */
     fun speakText(text: String) {
         val t = text.trim()
         if (t.isNotEmpty()) voice.speak(t, interrupt = true, ignoreMute = true)
     }
 
-    /** Speakers in the SELECTED Vela voice (from the catalog, so it's correct synchronously the instant
-     *  you switch — the live-loaded [PiperSynth.numSpeakers] lags a background reload). 1 for single-
-     *  speaker voices; the variant picker only shows when this is > 1. */
-    fun voiceSpeakerCount(): Int =
-        _state.value.selectedVoiceId?.let { PiperCatalog.byId(it)?.numSpeakers }
-            ?: piperSynth.numSpeakers
-
-    /** The saved (or seeded) speaker index for [id]'s per-voice key — matches [PiperSynth.speakerId].
-     *  Reads prefs straight from [appContext] (not the `settingsPrefs` property) so it's safe to call
-     *  from `init`, before that property's initializer has run. */
-    private fun savedSpeakerFor(id: String?): Int {
-        if (id == null) return 0
-        val prefs = appContext.getSharedPreferences("vela_settings", Context.MODE_PRIVATE)
-        val seed = if (id == VelaPiper.LEGACY_ID) calibration.current().defaultVoiceSpeaker else 0
-        val max = PiperCatalog.byId(id)?.numSpeakers ?: 0
-        val n = prefs.getInt(VelaPiper.speakerKey(id), seed)
-        return if (max > 0) n.coerceIn(0, max - 1) else n.coerceAtLeast(0)
-    }
-
-    /** Step the multi-speaker Vela voice by [delta], persist it, and speak a sample so it's heard. */
-    fun stepSpeaker(delta: Int) = setSpeaker(_state.value.voiceSpeaker + delta)
-
-    /** Jump the multi-speaker Vela voice straight to speaker [n] (clamped to the model's range),
-     *  persist it PER VOICE, and speak a sample. Lets the user type a variant number instead of stepping. */
-    fun setSpeaker(n: Int) {
-        val id = _state.value.selectedVoiceId ?: return // no voice installed → nothing to set
-        val max = voiceSpeakerCount()
-        val clamped = if (max > 0) n.coerceIn(0, max - 1) else n.coerceAtLeast(0)
-        settingsPrefs.edit().putInt(VelaPiper.speakerKey(id), clamped).apply()
-        _state.update { it.copy(voiceSpeaker = clamped) }
-        voice.speak(appContext.getString(R.string.mapvm_voice_sample), interrupt = true)
-    }
-
-    /** Adjust the spoken-directions speed by [delta] (clamped 0.5–2.0×), persist, apply, and preview. */
-    /** Guidance volume tier (issue #245): persisted multiplier the neural voice applies to its
-     *  own PCM (boost possible) and the system TTS takes capped at 1.0 (Android can only
-     *  attenuate). Auditions the nav sample so the change is heard immediately. */
+    /** Guidance volume tier: persisted multiplier. Auditions the nav sample so the change is heard immediately. */
     fun setVoiceVolume(v: Float) {
         val vol = v.coerceIn(0.2f, 3.0f)
         settingsPrefs.edit().putFloat("voice_volume", vol).apply()
         voice.setVolume(vol)
-        voice.speak(appContext.getString(R.string.mapvm_voice_sample), interrupt = true)
+        testVoicePrompt()
     }
 
     fun setVoiceSpeed(delta: Float) {
         var s = (_state.value.voiceSpeed + delta).coerceIn(0.5f, 2.0f)
         s = Math.round(s * 20f) / 20f // snap to 0.05 so it can't drift off exactly 1.00
         settingsPrefs.edit().putFloat("voice_speed", s).apply()
-        voice.setRate(s) // AOSP engine; the neural voice reads the voice_speed pref per utterance
+        voice.setRate(s) // AOSP engine
         _state.update { it.copy(voiceSpeed = s) }
-        voice.speak(appContext.getString(R.string.mapvm_voice_sample), interrupt = true)
+        testVoicePrompt()
     }
 
-    // ---- Voice library (the in-app Piper voice browser) --------------------------------------------
-
-    /** The browsable catalog of downloadable Piper voices. */
-    fun voiceCatalog(): List<PiperVoice> = PiperCatalog.ALL
-
-    /** Re-derive installed voices + the active selection + its speaker from disk (after any change). */
-    private fun refreshInstalledVoices() {
-        val active = VelaPiper.effectiveVoiceId(appContext)
-        _state.update {
-            it.copy(
-                installedVoiceIds = VelaPiper.installedVoiceIds(appContext).toSet(),
-                selectedVoiceId = active,
-                voiceSpeaker = savedSpeakerFor(active),
-            )
-        }
-    }
-
-    /** Download one catalog voice into its own subdir. One-at-a-time (the installer uses fixed temp
-     *  paths). Auto-activates the neural engine + selects the voice ONLY when it's the first voice ever
-     *  installed (so a user auditioning extra voices, or deliberately on a system TTS engine, isn't
-     *  hijacked off their current voice). */
-    fun downloadVoice(id: String) {
-        if (_state.value.voiceDownloadingId != null) return // serialize
-        val v = PiperCatalog.byId(id) ?: return
-        // Cheap disk pre-flight (models are 67–131 MB) — fail early with a clear message, not late.
-        if (appContext.filesDir.usableSpace < v.sizeBytes * 13 / 10) {
-            showStatus(appContext.getString(R.string.mapvm_not_enough_space, v.displayName, v.sizeMb))
-            return
-        }
-        val firstEver = VelaPiper.installedVoiceIds(appContext).isEmpty()
-        voiceCancel.set(false)
-        _state.update { it.copy(voiceDownloadingId = id, voiceDownloadPct = 0f, voiceInstalling = false) }
-        downloadLaunch(v.displayName) {
-            val ok = kokoroInstaller.download(
-                PiperCatalog.downloadUrl(id), VelaPiper.modelDirFor(appContext, id), v.sizeBytes,
-                onExtracting = { _state.update { if (it.voiceDownloadingId == id) it.copy(voiceInstalling = true) else it } },
-                active = { !voiceCancel.get() },
-            ) { p -> _state.update { if (it.voiceDownloadingId == id) it.copy(voiceDownloadPct = p) else it } }
-            // Clear the downloading state + refresh the installed set in ONE update (no "Download"
-            // flicker between finishing and appearing installed).
-            _state.update {
-                it.copy(
-                    voiceDownloadingId = null, voiceDownloadPct = null, voiceInstalling = false,
-                    installedVoiceIds = VelaPiper.installedVoiceIds(appContext).toSet(),
-                    selectedVoiceId = VelaPiper.effectiveVoiceId(appContext),
-                )
-            }
-            if (ok && VelaPiper.isVoiceReady(appContext, id)) {
-                if (firstEver) selectVoice(id, audition = false) else flashStatus(appContext.getString(R.string.mapvm_voice_downloaded, v.displayName))
-            } else if (!voiceCancel.get()) { // a user cancel is not a failure - stay quiet
-                showStatus(appContext.getString(R.string.mapvm_voice_download_failed, v.displayName))
-            }
-        }
-    }
-
-    // ---- On-device voice search (tier-1 ASR: Whisper / SenseVoice / Moonshine) ----
-
-    /** Reflect which engines are on disk + which is active (Settings picker shows Download/Remove/Use). */
-    fun refreshAsr() {
-        _state.update {
-            it.copy(
-                asrInstalledIds = app.vela.voice.AsrEngine.installed(appContext).map { e -> e.id }.toSet(),
-                asrActiveId = app.vela.voice.AsrEngine.active(appContext).id,
-            )
-        }
-        // "Load voice search at startup" (Settings > Performance): the earlier behavior, kept as a
-        // choice and on by default only on roomy phones.
-        if (app.vela.ui.SpeechPreload.on.value) warmAsrForSearch()
-    }
-
-    /** Pre-build the recognizer when the user REACHES for search (the search box gains focus), not
-     *  at launch (2026-09-22): the model is ~290 MB of native memory for two minutes on the chance
-     *  of a mic tap, and at launch it stacked with the web view warm-up into a full swap on the 4a.
-     *  Focus comes a second or two before a spoken query, which is most of the load; a mic tapped
-     *  straight from the bare map shows the "Getting ready" beat instead. */
-    fun warmAsrForSearch() {
-        if (app.vela.ui.VoiceSearch.enabled.value &&
-            app.vela.ui.VoiceSearch.engine.value != app.vela.ui.VoiceSearch.Engine.SYSTEM
-        ) {
-            asrRecognizer.warmUp()
-        }
-    }
-
-    /** Download the DEFAULT (Whisper) engine - the one-tap "install voice search" offer on the map. */
-    fun downloadAsrModel() = downloadAsrEngine(app.vela.voice.AsrEngine.DEFAULT)
-
-    /** Download a specific voice-search engine, reusing the neural-voice installer + its no-call-timeout
-     *  client (the shared 12 s cap would abort a download this size). The FIRST engine installed becomes
-     *  active automatically; later ones are downloaded but not auto-selected (the user picks in Settings). */
-    fun downloadAsrEngine(engine: app.vela.voice.AsrEngine) {
-        if (_state.value.asrDownloadPct != null) return // serialize: one engine at a time
-        val bytes = engine.sizeMb.toLong() * 1024 * 1024
-        if (appContext.filesDir.usableSpace < bytes * 13 / 10) {
-            showStatus(appContext.getString(R.string.mapvm_not_enough_space, appContext.getString(R.string.settings_voice_search_model), engine.sizeMb))
-            return
-        }
-        val hadNone = app.vela.voice.AsrEngine.installed(appContext).isEmpty()
-        asrRecognizer.clearQuarantine(engine) // a fresh download replaces whatever was quarantined
-        asrCancel.set(false)
-        _state.update { it.copy(asrDownloadPct = 0f, asrInstalling = false, asrDownloadingId = engine.id) }
-        downloadLaunch(engine.displayName) {
-            val ok = kokoroInstaller.download(
-                engine.url, engine.dir(appContext), bytes,
-                onExtracting = { _state.update { it.copy(asrInstalling = true) } },
-                active = { !asrCancel.get() },
-            ) { p -> _state.update { it.copy(asrDownloadPct = p) } }
-            // A fresh install with nothing selected yet becomes the active engine, so voice search
-            // works right after the very first download with no extra "pick one" step.
-            if (ok && engine.isInstalled(appContext) && hadNone) {
-                app.vela.voice.AsrEngine.setActive(appContext, engine)
-            }
-            _state.update { it.copy(asrDownloadPct = null, asrInstalling = false, asrDownloadingId = null) }
-            refreshAsr()
-            if (ok && engine.isInstalled(appContext)) {
-                asrRecognizer.warmUp() // a fresh install should listen immediately on first tap
-                flashStatus(appContext.getString(R.string.mapvm_asr_ready))
-            } else {
-                showStatus(appContext.getString(R.string.mapvm_asr_download_failed))
-            }
-        }
-    }
-
-    /** Make an already-installed engine the active one and warm it, so the next mic tap uses it. */
-    fun selectAsrEngine(engine: app.vela.voice.AsrEngine) {
-        if (!engine.isInstalled(appContext)) return
-        app.vela.voice.AsrEngine.setActive(appContext, engine)
-        refreshAsr()
-        asrRecognizer.warmUp()
-    }
-
-    /** Remove a downloaded engine's files. If it was active, [AsrEngine.active] falls back to another
-     *  installed engine (or the default), so the mic keeps working when possible. */
-    fun deleteAsrEngine(engine: app.vela.voice.AsrEngine) {
-        // Free the loaded model BEFORE removing its files. Deleting the directory alone left the
-        // native recognizer resident for the rest of the process (~267 MB measured on the fork),
-        // so Remove reclaimed disk but no memory at all (ported from vela-dpad, 2026-07-23).
-        asrRecognizer.release()
-        engine.dir(appContext).deleteRecursively()
-        refreshAsr()
-        if (app.vela.voice.AsrEngine.anyInstalled(appContext)) asrRecognizer.warmUp()
-    }
-
-    fun voiceMicGranted(): Boolean = asrRecognizer.hasMicPermission()
-
-    /** Record + transcribe on-device (tier-1); returns the heard text or null. Driven by the capture
-     *  dialog, which supplies the loudness sink, a start callback and an early-stop check. */
-    suspend fun voiceListen(
-        onLevel: (Float) -> Unit,
-        onListening: () -> Unit,
-        canceled: () -> Boolean,
-    ): app.vela.voice.VoiceResult =
-        asrRecognizer.listen(onLevel, onListening, canceled)
-
-    /** Apply a transcript from either voice tier as the query and run the search. */
+    /** Apply a transcript from voice search as the query and run the search. */
     fun applyVoiceQuery(text: String) {
         onQueryChange(text)
-        search() // intents first ("take me home"), else the plain search
+        search()
     }
-
-    /** Make an already-downloaded voice active: persist the pick, reload the synth (the single switch
-     *  trigger), point the engine at the neural synth. [audition] speaks a nav sample - true only for
-     *  an explicit pick in the voice library (hearing the voice you chose is the point there); the
-     *  install-completion and delete-fallback paths pass false, because a phone that starts talking
-     *  on its own right after a download reads as a bug (user 2026-07-10). The Test button remains
-     *  the on-demand way to hear the active voice. */
-    fun selectVoice(id: String, audition: Boolean = true) {
-        if (!VelaPiper.isVoiceReady(appContext, id)) return
-        VelaPiper.setSelectedVoiceId(appContext, id)
-        piperSynth.reloadVoice() // THE build of the new voice (race-free; runs first on the worker)
-        setVoiceEngine(VoiceEngine(VelaPiper.ENGINE_ID, VelaPiper.LABEL)) // route VoiceGuide→neural + persist engine
-        refreshInstalledVoices() // selectedVoiceId + per-voice speaker for the variant UI
-        if (audition) voice.speak(appContext.getString(R.string.mapvm_voice_sample), interrupt = true)
-    }
-
-    /** Delete a downloaded voice, reclaiming its disk. Deleting the ACTIVE voice falls to another
-     *  installed voice, else to a system TTS engine. Safe mid-nav: the synth is switched off the files
-     *  (or released) before the dir is unlinked on the synth's worker thread. */
-    fun deleteVoice(id: String) {
-        val wasActive = VelaPiper.effectiveVoiceId(appContext) == id
-        val dir = VelaPiper.modelDirFor(appContext, id)
-        settingsPrefs.edit().remove(VelaPiper.speakerKey(id)).apply()
-        // Drop it from the UI IMMEDIATELY (optimiztic): the actual unlink is async (worker/IO), and
-        // re-reading the registry before it finishes would leave the deleted voice looking installed —
-        // that was the "still had the trash icon" bug when deleting the active voice.
-        fun hide() = _state.update { it.copy(installedVoiceIds = it.installedVoiceIds - id) }
-        hide()
-        if (wasActive) {
-            val next = VelaPiper.installedVoiceIds(appContext).firstOrNull { it != id }
-            if (next != null) {
-                selectVoice(next, audition = false) // reloads the synth onto `next` (off `id`'s files); refreshes state, then:
-                piperSynth.deleteModelDir(dir) // unlink `id` on the worker, after the reload
-                hide() // selectVoice's refresh re-read the (still-present) dir → hide `id` again
-            } else {
-                VelaPiper.clearSelectedVoice(appContext)
-                piperSynth.release() // no neural voice left → drop the engine
-                piperSynth.deleteModelDir(dir)
-                // Fall back to a system TTS engine if one is installed, else leave nav silent.
-                voiceEngines().firstOrNull { it.packageName != VelaPiper.ENGINE_ID }?.let { setVoiceEngine(it) }
-                _state.update { it.copy(installedVoiceIds = it.installedVoiceIds - id, selectedVoiceId = null) }
-                flashStatus(appContext.getString(R.string.mapvm_vela_voice_removed))
-            }
-        } else {
-            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                dir.deleteRecursively()
-                withContext(kotlinx.coroutines.Dispatchers.Main) { refreshInstalledVoices() }
-            }
-        }
-    }
-
-    /** Onboarding's one-tap install — grabs a voice that MATCHES the app language (so a French phone
-     *  gets a French voice + French nav text out of the box), falling back to the remote-settable fleet
-     *  default (HFC) for English. As the first voice, it's activated. */
-    fun downloadPiper() {
-        downloadVoice(defaultVoiceId())
-    }
-
-    /** The Vela voice a fresh install downloads — the fleet default (calibration) for English,
-     *  else the directions language's recommended voice. Public: the voice browser brands this id
-     *  "Vela voice" and offers a one-tap reinstall when it's missing (user 2026-07-18, after a
-     *  crash mid-install left them hunting the list for which voice was the right one). */
-    fun defaultVoiceId(): String {
-        val lang = app.vela.ui.AppLocale.directionsEffective().language
-        return if (lang == "en") calibration.current().defaultVoiceId else PiperCatalog.defaultFor(lang).id
-    }
-
-    /** Download size (MB) of the voice [downloadPiper] would fetch — so the onboarding prompt shows
-     *  the REAL size (it used to hardcode the long-gone 126 MB Kokoro model). */
-    fun defaultVoiceSizeMb(): Int = PiperCatalog.byId(defaultVoiceId())?.sizeMb ?: 67
 
     /** null = still initializing, true = a voice is ready, false = no usable voice. */
     fun voiceWorking(): Boolean? = voice.working
-
-    /** Open-source engines a phone with none can install in one tap (off F-Droid). */
-    fun installableEngines(): List<VoiceInstaller.Engine> =
-        voiceInstaller.engines.filterNot { voiceInstaller.isInstalled(it.pkg) }
-
-    fun installVoiceEngine(engine: VoiceInstaller.Engine) {
-        if (_state.value.installingEngine != null) return // one at a time
-        _state.update { it.copy(installingEngine = engine.pkg) }
-        viewModelScope.launch {
-            val result = voiceInstaller.installFromFDroid(engine.pkg)
-            _state.update { it.copy(installingEngine = null) }
-            // result == null → the system installer launched; else a status/error line.
-            flashStatus(result ?: appContext.getString(R.string.mapvm_opening_installer, engine.label))
-        }
-    }
 
     private var statusJob: Job? = null
 
     /** A status banner that **auto-clears** after a few seconds (unlike [showStatus],
      *  which stays until dismissed) — for transient feedback like a finished download. */
-    fun flashStatus(msg: String, millis: Long = 4500L, voiceAction: Boolean = false, ttsSettings: Boolean = false, voiceDownloadId: String? = null) {
+    fun flashStatus(msg: String, millis: Long = 4500L, voiceAction: Boolean = false, ttsSettings: Boolean = false) {
         statusJob?.cancel()
         _state.update {
-            it.copy(status = msg, statusVoiceAction = voiceAction, statusOpensTtsSettings = ttsSettings, statusVoiceDownloadId = voiceDownloadId, statusAutoMs = millis)
+            it.copy(status = msg, statusVoiceAction = voiceAction, statusOpensTtsSettings = ttsSettings, statusAutoMs = millis)
         }
         statusJob = viewModelScope.launch {
             delay(millis)
             _state.update {
-                if (it.status == msg) it.copy(status = null, statusVoiceAction = false, statusOpensTtsSettings = false, statusVoiceDownloadId = null, statusAutoMs = null) else it
+                if (it.status == msg) it.copy(status = null, statusVoiceAction = false, statusOpensTtsSettings = false, statusAutoMs = null) else it
             }
         }
     }
@@ -8261,8 +7939,6 @@ class MapViewModel @Inject constructor(
         val here = mapCenter ?: _state.value.myLocation ?: return
         app.vela.ui.SimLocation.set(appContext, here)
         locationJob?.cancel(); locationJob = null // sim owns the puck — no live fixes
-        // The timer armed by the collector's LAST fix keeps ticking after the cancel and would
-        // gray the pinned dot ~30 s in (same hole as the startLocation() sim branch).
         staleTimerJob?.cancel(); staleTimerJob = null
         _state.update {
             it.copy(myLocation = here, center = here, recenterTick = it.recenterTick + 1, myLocationStale = false, startHold = false)
@@ -8276,7 +7952,7 @@ class MapViewModel @Inject constructor(
     }
 
     fun clearStatus() = _state.update {
-        it.copy(status = null, statusVoiceAction = false, statusOpensTtsSettings = false, statusVoiceDownloadId = null, statusAutoMs = null)
+        it.copy(status = null, statusVoiceAction = false, statusOpensTtsSettings = false, statusAutoMs = null)
     }
 
     /** A heads-up card that DISMISSES ITSELF after [STATUS_AUTO_MS] with a draining bar (user
@@ -8284,7 +7960,7 @@ class MapViewModel @Inject constructor(
      *  ([voiceAction]) stays. */
     fun showStatus(msg: String, voiceAction: Boolean = false) = _state.update {
         it.copy(
-            status = msg, statusVoiceAction = voiceAction, statusOpensTtsSettings = false, statusVoiceDownloadId = null,
+            status = msg, statusVoiceAction = voiceAction, statusOpensTtsSettings = false,
             statusAutoMs = if (voiceAction) null else STATUS_AUTO_MS,
         )
     }
@@ -8746,7 +8422,7 @@ class MapViewModel @Inject constructor(
             // behind the map's businesses, and leaving the archives out of the only storage screen
             // made a few hundred MB invisible.
             placesMb = mbOf(java.io.File(data, "poipacks")) + mbOf(java.io.File(data, "places")),
-            voicesMb = mbOf(java.io.File(files, "piper")) + mbOf(java.io.File(files, "asr")),
+            voicesMb = 0,
         )
     }
 

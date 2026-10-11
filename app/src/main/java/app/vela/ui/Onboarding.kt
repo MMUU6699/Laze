@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
-import app.vela.core.voice.VelaPiper
 
 /**
  * First-run welcome + a *tasteful* one-time donation prompt.

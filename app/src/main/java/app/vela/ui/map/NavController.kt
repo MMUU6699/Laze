@@ -12,7 +12,6 @@ import app.vela.core.model.distanceTo
 import app.vela.core.nav.NavSession
 import app.vela.core.voice.VoiceGuide
 import app.vela.service.NavigationService
-import app.vela.voice.PiperSynth
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,7 +67,6 @@ internal class NavController(
         fun passAlert(here: LatLng, speedMps: Double?)
         fun clearSpeedLimit()
         fun clearSelection()
-        fun neuralSynthFor(engineId: String?): PiperSynth?
         suspend fun nameIfNeeded(route: Route): Route
         suspend fun roadFeaturesCoverRoute(poly: List<LatLng>): MapViewModel.RoadCover
         fun sanePosition(here: LatLng, prev: LatLng?, lastSpeed: Float?, dt: Double, outlierStreak: IntArray): LatLng
@@ -381,14 +379,13 @@ internal class NavController(
         val job = scope.launch {
             try {
                 host.destination = dest
-                val engine = _state.value.selectedEngine?.packageName
-                host.neuralSynthFor(engine)?.let { voice.neural = it }
                 navSession.replayMode = true
                 // Pass the REAL travel mode: haptics are per-mode (bike buzzes by default, driving
                 // doesn't), so a demo of a bike route must buzz like the real ride would. And the
                 // stops (2026-09-14): a demo used to start the session without them, so per-stop
                 // cues and the mid-drive stops editor (#402) had nothing to work with.
                 val demoStops = navStopsFor(route, _state.value.directionsWaypoints)
+                val engine = _state.value.selectedEngine?.packageName
                 navSession.start(route, dest, label, engine, demoStops, _state.value.travelMode)
                 replayOwnsNav = true
                 // Demo mode presents as REAL nav, so the ongoing turn notification is part of
@@ -744,12 +741,7 @@ internal class NavController(
                     val dest = meta.dest ?: route?.polyline?.lastOrNull()
                     if (route != null && dest != null) {
                         host.destination = dest
-                        // Replay must speak through the SAME engine as live nav - the user's selected
-                        // voice (e.g. the Vela neural voice), not null → which fell back to the system
-                        // TTS while still applying the voice-speed pref (the "GrapheneOS voice at 0.8×"
-                        // bug). Wire the neural synth too, in case the pick changed since launch.
                         val engine = _state.value.selectedEngine?.packageName
-                        host.neuralSynthFor(engine)?.let { voice.neural = it }
                         navSession.replayMode = true
                         navSession.start(route, dest, meta.label, engine)
                         replayOwnsNav = true

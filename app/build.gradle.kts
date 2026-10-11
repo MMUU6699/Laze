@@ -210,19 +210,9 @@ android {
     }
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
-        // The neural-TTS runtime (ONNX Runtime + sherpa-onnx, from the vendored AAR) ships its .so
-        // for all 4 ABIs; Vela targets arm64 phones, so drop the other ABIs' copies — they'd add
-        // ~65 MB for no device we support. MapLibre and other libs stay multi-ABI (untouched).
         jniLibs {
-            excludes += listOf(
-                "**/armeabi-v7a/libonnxruntime.so", "**/armeabi-v7a/libsherpa-onnx*.so",
-                "**/x86/libonnxruntime.so", "**/x86/libsherpa-onnx*.so",
-                "**/x86_64/libonnxruntime.so", "**/x86_64/libsherpa-onnx*.so",
-            )
-            // The all-in-one APK carries Cronet for ARM only (2026-09-23): x86 emulators and
-            // Chromebooks still install and run it, and their Google requests stay on OkHttp
-            // (CronetHolder fails to load the library and GoogleTransport falls back). Saves
-            // ~14 MB. A per-chip build keeps it: there the x86 APKs carry their own Cronet.
+            // The all-in-one APK carries Cronet for ARM only: x86 emulators and
+            // Chromebooks still install and run it.
             if (!project.hasProperty("abiSplits")) {
                 excludes += listOf("**/x86/libcronet*.so", "**/x86_64/libcronet*.so")
             }
@@ -245,12 +235,7 @@ dependencies {
 
     implementation(project(":core"))
 
-    // sherpa-onnx: in-process neural TTS runtime (runs the downloaded Kokoro model). Vendored AAR
-    // (no official Maven artifact; the JitPack coordinate doesn't resolve). Lives in :app because a
-    // library module can't consume a local .aar — KokoroSynth sits in :app and bridges into :core's
-    // VoiceGuide via an interface. Native .so are arm64-only in the package (see packaging{}).
-    implementation(files("libs/sherpa-onnx-1.13.3.aar"))
-    // Extracts the Kokoro model's .tar.bz2 at download time (Android has no built-in bzip2/tar).
+    // Extracts archives when needed (Android has no built-in bzip2/tar).
     implementation("org.apache.commons:commons-compress:1.28.0")
 
     implementation(libs.androidx.core.ktx)

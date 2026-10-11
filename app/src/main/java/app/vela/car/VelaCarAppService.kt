@@ -39,7 +39,6 @@ class VelaCarAppService : CarAppService() {
     @Inject lateinit var shortcuts: PlaceShortcutStore
     @Inject lateinit var voiceGuide: VoiceGuide
     @Inject lateinit var routeEngine: RouteEngine
-    @Inject lateinit var piperSynth: app.vela.voice.PiperSynth
     @Inject lateinit var offlinePois: app.vela.core.data.OfflinePoiStore
     @Inject lateinit var offlineAddresses: app.vela.core.data.OfflineAddressStore
     @Inject lateinit var poiPacks: app.vela.offline.PoiPackStore
@@ -61,10 +60,6 @@ class VelaCarAppService : CarAppService() {
         else onCreateSession()
 
     override fun onCreateSession(): Session {
-        // The neural voice is wired into VoiceGuide by the phone's view model; a drive started from
-        // the car with the phone UI closed had no synth attached and fell back to the system TTS
-        // (user 2026-09-21: "the voice that speaks is not vela voice"). Attach it here too.
-        if (voiceGuide.neural == null && app.vela.core.voice.VelaPiper.isReady(this)) voiceGuide.neural = piperSynth
         // "Spoken directions" is applied to VoiceGuide by the phone's view model too: without it a
         // car-only start spoke with the setting off, and the car's own toggle showed On.
         if (!getSharedPreferences("vela_settings", MODE_PRIVATE).getBoolean("spoken_directions", true)) voiceGuide.muted = true

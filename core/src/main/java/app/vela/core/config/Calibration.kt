@@ -167,9 +167,7 @@ data class Calibration(
         // 0.8× — the user's preferred nav cadence. (Briefly 0.72 on 2026-07-06 for consonant clarity,
         // reverted 2026-07-07 — the fragment-punctuation + 152nd fixes handle articulation directly.)
         const val DEFAULT_VOICE_SPEED = 0.8f
-        // HFC Female — the user's pick for the fleet default voice (2026-07-03). Kept in sync with
-        // VelaPiper.DEFAULT_VOICE_ID (the compiled fallback used where calibration isn't handy).
-        const val DEFAULT_VOICE_ID = app.vela.core.voice.VelaPiper.DEFAULT_VOICE_ID
+        const val DEFAULT_VOICE_ID = "default"
         const val DEFAULT_PHOTOS_ENDPOINT =
             "https://www.google.com/maps/_/MapsWizUi/data/batchexecute?rpcids=hspqX&source-path=/maps&hl=en&_reqid=1&rt=c"
 

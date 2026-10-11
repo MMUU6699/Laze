@@ -768,119 +768,17 @@ fun MapScreen(
             }
         }
     }
-    // Tier-1 capture state: the listening dialog, live loudness, an early-stop flag (Done) and an
-    // abort flag (Back/cancel → don't apply the partial transcript).
-    val voiceScope = rememberCoroutineScope()
-    var voiceListening by remember { mutableStateOf(false) }
-    var voiceStarted by remember { mutableStateOf(false) }
-    var voiceLevel by remember { mutableStateOf(0f) }
-    var voiceStop by remember { mutableStateOf(false) }
-    var voiceAbort by remember { mutableStateOf(false) }
-    // Non-null while a voice failure is being explained. Before this existed every failure closed
-    // the listening sheet and said nothing (the fork's issue #81; ported 2026-07-23).
-    var voiceError by remember { mutableStateOf<app.vela.voice.VoiceResult.Reason?>(null) }
-    fun startLocalVoice() {
-        voiceStop = false; voiceAbort = false; voiceStarted = false; voiceLevel = 0f; voiceListening = true
-        voiceScope.launch {
-            val result = vm.voiceListen(
-                onLevel = { voiceLevel = it },
-                onListening = { voiceStarted = true },
-                canceled = { voiceStop },
-            )
-            voiceListening = false
-            if (voiceAbort) return@launch // the user backed out; never talk back at them
-            when (result) {
-                is app.vela.voice.VoiceResult.Text -> {
-                    focusManager.clearFocus()
-                    vm.applyVoiceQuery(result.query)
-                }
-                // Heard nothing: the sheet closing IS the feedback. An error here would scold
-                // someone who simply changed their mind.
-                app.vela.voice.VoiceResult.NoSpeech -> Unit
-                // Anything else used to close the sheet silently and identically - the user could
-                // not tell a missing model from a mic this phone would not open, and neither could we.
-                is app.vela.voice.VoiceResult.Failed -> voiceError = result.reason
-            }
-        }
-    }
-    val recordAudioLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        // A DENIED prompt used to do nothing whatsoever - the same dead silence, and the likeliest
-        // shape of it on a locked-down ROM that answers the prompt on the user's behalf.
-        if (granted) startLocalVoice() else voiceError = app.vela.voice.VoiceResult.Reason.PERMISSION
-    }
-    voiceError?.let { reason ->
-        // One dialog, the real reason, and a route to the fix. VelaDialog is already D-pad-correct.
-        app.vela.ui.VelaDialog(
-            onDismissRequest = { voiceError = null },
-            title = stringResource(R.string.voice_error_title),
-            // "Try again" is the confirm because most of these are transient (a mic another app was
-            // holding, a recording that dropped); the message names the Settings route for the two
-            // that are not. Dismiss auto-focuses, so one OK just closes.
-            confirmText = stringResource(R.string.voice_error_retry),
-            onConfirm = {
-                voiceError = null
-                if (vm.voiceMicGranted()) startLocalVoice()
-                else recordAudioLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-            },
-            dismissText = stringResource(R.string.mapscreen_got_it),
-            onDismiss = { voiceError = null },
-            text = {
-                Text(
-                    stringResource(
-                        when (reason) {
-                            app.vela.voice.VoiceResult.Reason.MODEL -> R.string.voice_error_model
-                            app.vela.voice.VoiceResult.Reason.PERMISSION -> R.string.voice_error_permission
-                            app.vela.voice.VoiceResult.Reason.VAD -> R.string.voice_error_vad
-                            app.vela.voice.VoiceResult.Reason.AUDIO_INIT -> R.string.voice_error_audio
-                            app.vela.voice.VoiceResult.Reason.RECORDING -> R.string.voice_error_recording
-                        },
-                    ),
-                )
-            },
-        )
-    }
-
     val voiceProviderAvailable = remember { app.vela.ui.VoiceSearch.hasProvider(context) }
     val voicePrompt = stringResource(R.string.search_voice_prompt)
-    // Reactive resolve (mirrors VoiceSearch.resolvedMode but keyed on vm state so the mic reflects a
-    // just-downloaded model without a relaunch): enabled/engine are mutableState, local rides state.
-    val micMode = when {
-        !app.vela.ui.VoiceSearch.enabled.value -> app.vela.ui.VoiceSearch.Mode.NONE
-        app.vela.ui.VoiceSearch.engine.value == app.vela.ui.VoiceSearch.Engine.LOCAL ->
-            if (state.asrInstalledIds.isNotEmpty()) app.vela.ui.VoiceSearch.Mode.LOCAL else app.vela.ui.VoiceSearch.Mode.NONE
-        app.vela.ui.VoiceSearch.engine.value == app.vela.ui.VoiceSearch.Engine.SYSTEM ->
-            if (voiceProviderAvailable) app.vela.ui.VoiceSearch.Mode.SYSTEM else app.vela.ui.VoiceSearch.Mode.NONE
-        state.asrInstalledIds.isNotEmpty() -> app.vela.ui.VoiceSearch.Mode.LOCAL       // Auto: on-device wins
-        voiceProviderAvailable -> app.vela.ui.VoiceSearch.Mode.SYSTEM
-        else -> app.vela.ui.VoiceSearch.Mode.NONE
-    }
-    // With nothing installed the mic still shows (when the toggle is on) and tapping it OFFERS the
-    // Vela voice download - a hidden mic made the whole feature undiscoverable on a fresh install.
-    var showAsrOffer by remember { mutableStateOf(false) }
-    val onMic: (() -> Unit)? = if (app.vela.ui.VoiceSearch.enabled.value) {
+    val onMic: (() -> Unit)? = if (app.vela.ui.VoiceSearch.enabled.value && voiceProviderAvailable) {
         {
-            when (micMode) {
-                app.vela.ui.VoiceSearch.Mode.NONE -> showAsrOffer = true
-                app.vela.ui.VoiceSearch.Mode.SYSTEM -> {
-                    val intent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                        // Pin the voice app the user picked in Settings; with no pick, defer to
-                        // Android's own default app, and only pin the first installed one when
-                        // Android has no default either (else its chooser interrupts dictation).
-                        app.vela.ui.VoiceSearch.launchComponent(context)?.let { component = it }
-                        putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, app.vela.ui.AppLocale.effective().toLanguageTag())
-                        putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, voicePrompt)
-                    }
-                    // The resolver check can go stale (provider uninstalled since launch); catch so a
-                    // tap can never crash - it just does nothing.
-                    runCatching { voiceLauncher.launch(intent) }
-                }
-                app.vela.ui.VoiceSearch.Mode.LOCAL ->
-                    if (vm.voiceMicGranted()) startLocalVoice()
-                    else recordAudioLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            val intent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                app.vela.ui.VoiceSearch.launchComponent(context)?.let { component = it }
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, app.vela.ui.AppLocale.effective().toLanguageTag())
+                putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, voicePrompt)
             }
+            runCatching { voiceLauncher.launch(intent) }
         }
     } else {
         null
@@ -901,34 +799,12 @@ fun MapScreen(
             },
         )
     }
-    if (showAsrOffer) {
-        app.vela.ui.VelaDialog(
-            onDismissRequest = { showAsrOffer = false },
-            title = stringResource(R.string.map_asr_offer_title),
-            confirmText = stringResource(R.string.settings_voice_search_download, app.vela.voice.AsrEngine.DEFAULT.sizeMb),
-            onConfirm = { showAsrOffer = false; vm.downloadAsrModel() },
-            dismissText = stringResource(R.string.root_not_now),
-            onDismiss = { showAsrOffer = false },
-            dismissLowEmphasis = true,
-            text = { Text(stringResource(R.string.map_asr_offer_body)) },
-        )
-    }
-    // Reflect whether the on-device model is present, so the mic + Settings update without a relaunch.
-    LaunchedEffect(Unit) { vm.refreshAsr() }
     // POI visibility prefs act immediately (clear + re-resolve), not on the next pan.
     LaunchedEffect(
         app.vela.ui.MapPoiPrefs.showPois.value,
         app.vela.ui.MapPoiPrefs.showTransit.value,
         app.vela.ui.MapPoiPrefs.showCivic.value,
     ) { vm.onPoiPrefsChanged() }
-    if (voiceListening) {
-        app.vela.ui.VoiceCaptureDialog(
-            level = voiceLevel,
-            listening = voiceStarted,
-            onDone = { voiceStop = true },                    // stop early, keep + search what was heard
-            onCancel = { voiceAbort = true; voiceStop = true }, // Back/outside: abort, don't apply
-        )
-    }
 
     // Tapping the locate button with no permission is an unambiguous "I want my location" - request
     // it (no rationale screen needed, the tap IS the intent). Granted → normal recenter.
@@ -1481,7 +1357,6 @@ fun MapScreen(
                         onClear = vm::clearSearch,
                         onFocusChange = {
                             searchFocused = it
-                            if (it) vm.warmAsrForSearch() // the speech model loads when you reach for search, not at launch
                             // Focus opens the entry page; a touch blur closes it. Under
                             // D-pad, blur must NOT close (focus walks the rows) — BACK /
                             // a run search / a pick close it instead.
@@ -2657,7 +2532,6 @@ fun MapScreen(
         // below the search bar + chips on the browse map; during nav just below the turn card,
         // whose height VARIES (lanes, "then" row) — so it hangs off the banner's MEASURED bottom
         // edge, the same navBannerBottomPx the compass uses, and slides with it.
-        val downloadingVoiceId = state.voiceDownloadingId
         val downloadingRegion = state.routingDownloadingId != null || state.poiPackDownloadingId != null || state.regionFileStep != null
         val bareMap = gates.bareMap
         // Download progress shows over a place sheet or the route chooser too (2026-09-28: an area
@@ -2667,7 +2541,7 @@ fun MapScreen(
         val fasterOffer = state.navigating && state.fasterRoute != null
         if (state.status != null || fasterOffer ||
             (bareMap && (state.notices.isNotEmpty() || state.updateInfo != null)) ||
-            (downloadsOk && (downloadingVoiceId != null || state.asrDownloadPct != null || downloadingRegion || state.areaDownloadPct != null))
+            (downloadsOk && (downloadingRegion || state.areaDownloadPct != null))
         ) {
             val bannerBottom = with(LocalDensity.current) { navBannerBottomPx.toDp() }
             Column(
@@ -2703,28 +2577,18 @@ fun MapScreen(
                     )
                 }
                 state.status?.let { msg ->
-                    val voiceDl = state.statusVoiceDownloadId
                     InfoCard(
                         title = stringResource(R.string.mapscreen_heads_up),
                         body = msg,
                         actionLabel = stringResource(R.string.mapscreen_dismiss),
                         onAction = vm::clearStatus,
-                        // A voice problem carries its fix. Normally a pill straight to Vela's voice
-                        // library; for a language with no Vela voice (Japanese) it opens the phone's
-                        // own voice settings instead, where the user can add a system voice.
                         autoMs = state.statusAutoMs,
                         pillLabel = when {
                             state.statusOpensTtsSettings -> stringResource(R.string.mapscreen_system_voices)
-                            voiceDl != null -> app.vela.core.voice.PiperCatalog.byId(voiceDl)
-                                ?.let { v -> stringResource(R.string.mapscreen_download_voice, v.displayName, v.sizeMb) }
-                                ?: stringResource(R.string.mapscreen_get_voice)
                             state.statusVoiceAction -> stringResource(R.string.mapscreen_get_voice)
                             else -> null
                         },
                         onPill = when {
-                            voiceDl != null -> {
-                                { vm.clearStatus(); vm.downloadVoice(voiceDl) }
-                            }
                             state.statusOpensTtsSettings -> {
                                 {
                                     vm.clearStatus()
@@ -2751,14 +2615,6 @@ fun MapScreen(
                     )
                 }
                 if (downloadsOk) {
-                    if (downloadingVoiceId != null) {
-                        VoiceDownloadCard(installing = state.voiceInstalling, pct = state.voiceDownloadPct ?: 0f, onCancel = { vm.cancelVoiceDownload() })
-                    }
-                    // The speech model download (started from the mic offer or Settings) gets the
-                    // same card - it's also called Vela voice, so the one label fits both.
-                    if (state.asrDownloadPct != null) {
-                        VoiceDownloadCard(installing = state.asrInstalling, pct = state.asrDownloadPct ?: 0f, onCancel = { vm.cancelAsrDownload() })
-                    }
                     // A region (state/country) download: the routing graph first, then its place
                     // pack — same progress card treatment as the voice download, so a Settings-
                     // started state download stays visible after backing out to the map.
@@ -5881,46 +5737,8 @@ private fun InfoCard(
     }
 }
 
-/** Voice-download progress over the map — makes the onboarding one-tap install visible (it used to
- *  run with no surface outside Settings). Reads the SAME state the Settings row does, so it also
- *  shows when a Settings-started download is still running after backing out to the map. The bar
- *  includes the extract phase (KokoroInstaller maps untar into the tail), so it no longer parks at
- *  ~98% while the archive unpacks. */
-@Composable
-private fun VoiceDownloadCard(installing: Boolean, pct: Float, onCancel: (() -> Unit)? = null, modifier: Modifier = Modifier) {
-    Card(
-        modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        ),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (installing) stringResource(R.string.map_voice_installing)
-                    else stringResource(R.string.map_voice_downloading, (pct * 100).toInt()),
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                // No cancel during the unpack: the bytes are already down, aborting there only wastes them.
-                if (!installing && onCancel != null) {
-                    IconButton(onClick = onCancel, modifier = Modifier.size(28.dp).dpadHighlight(androidx.compose.foundation.shape.CircleShape)) {
-                        Icon(Sym.Close, contentDescription = stringResource(R.string.mapscreen_cancel), modifier = Modifier.size(18.dp))
-                    }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            // Determinate while downloading; the unpack step can't report a meaningful %, so it goes
-            // indeterminate under the "Installing…" label rather than crawling a frozen-looking bar.
-            app.vela.ui.VelaProgressBar(if (installing) null else pct)
-        }
-    }
-}
-
 /** Progress card for a region (state/country) offline download — the routing graph, then the
- *  region's place pack. Mirrors [VoiceDownloadCard] so a Settings-started download stays visible
- *  on the map. */
+ *  region's place pack. */
 @Composable
 private fun RegionDownloadCard(name: String, places: Boolean, pct: Int, area: Boolean = false, stage: Int = 0, fileStep: Int? = null, onCancel: (() -> Unit)? = null, modifier: Modifier = Modifier) {
     Card(

@@ -1478,6 +1478,10 @@
     <string name="settings_voice_health_ready">الصوت العربي جاهز ويعمل دون إنترنت</string>
     <string name="settings_voice_health_test">اختبار الصوت</string>
     <string name="settings_voice_health_fix">إصلاح / تثبيت الصوت</string>
+    <string name="settings_voice_iraqi_dialect">اللهجة العراقية المبسّطة</string>
+    <string name="settings_voice_iraqi_dialect_hint">استخدام عبارات ملاحة عراقية مألوفة وعفوية (مثل: لف يمنة، الفلكة، ضل مكمل كبل).</string>
+    <string name="voice_sample_iraqi_test">بعد مئتي متر، لف يمنة باتجاه شارع الرشيد</string>
+    <string name="settings_voice_engine">محرك تحويل النص إلى كلام</string>
     <string name="onboarding_voice_ready_title">التوجيه الصوتي بالعربية جاهز</string>
     <string name="onboarding_voice_ready_desc">التوجيه الصوتي جاهز للاستخدام ومربوط بمحرك الصوت في هاتفك.</string>
     <string name="onboarding_voice_setup_needed">تثبيت الصوت العربي</string>

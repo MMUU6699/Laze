@@ -176,12 +176,7 @@ internal fun SettingsHub(
         HubRow(
             icon = SymOutlined.VolumeUp,
             title = stringResource(R.string.settings_voice),
-            // A voice download keeps its progress visible from the hub (it used to sit at the top
-            // of the Voice section precisely so a collapsed library couldn't hide it).
-            subtitle = if (state.voiceDownloadingId != null) {
-                if (state.voiceInstalling) stringResource(R.string.settings_voice_search_installing)
-                else stringResource(R.string.settings_voice_search_downloading, ((state.voiceDownloadPct ?: 0f) * 100).toInt())
-            } else stringResource(R.string.settings_hub_voice_sub),
+            subtitle = stringResource(R.string.settings_hub_voice_sub),
             modifier = rowModifier(SettingsSection.VOICE, first = false),
             onClick = { onOpen(SettingsSection.VOICE, null) },
         )

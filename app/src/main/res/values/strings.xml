@@ -1523,6 +1523,10 @@
     <string name="settings_voice_health_ready">Arabic voice is ready and works offline</string>
     <string name="settings_voice_health_test">Test Voice</string>
     <string name="settings_voice_health_fix">Fix Voice Setup</string>
+    <string name="settings_voice_iraqi_dialect">Simplified Iraqi Dialect</string>
+    <string name="settings_voice_iraqi_dialect_hint">Use familiar spoken Iraqi phrasing for navigation directions (e.g. turn right, roundabout, keep going straight).</string>
+    <string name="voice_sample_iraqi_test">In 200 meters, turn right towards Al-Rasheed Street</string>
+    <string name="settings_voice_engine">Text-to-Speech Engine</string>
     <string name="onboarding_voice_ready_title">Arabic Voice Guidance Ready</string>
     <string name="onboarding_voice_ready_desc">Voice navigation is ready and powered by your system speech engine.</string>
     <string name="onboarding_voice_setup_needed">Arabic Voice Setup Needed</string>

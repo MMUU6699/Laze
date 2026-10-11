@@ -122,11 +122,9 @@ class VoiceGuide @Inject constructor(
         }.start()
     }
 
-    /** Vela's in-process neural voice (Piper/sherpa-onnx), wired from `:app` where the native
-     *  runtime lives. When the user selects [VelaPiper.ENGINE_ID], guidance goes here instead of
-     *  Android TextToSpeech. Null until wired / on a build without it. */
-    var neural: NeuralSynth? = null
-    private var useNeural = false
+    /** Whether to adapt spoken Arabic instructions into familiar Iraqi dialect phrases. */
+    @Volatile
+    var iraqiDialect: Boolean = true
 
     /** The language the nav text is currently GENERATED in (`NavStringsRegistry`) — the language the
      *  chosen voice must actually be able to speak. */
@@ -171,7 +169,6 @@ class VoiceGuide @Inject constructor(
         // next scheduled prompt re-fires naturally once the call releases focus.
         if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
             tts?.stop()
-            neural?.stop()
             focusHandler.removeCallbacks(abandonFocusRunnable)
             synchronized(focusLock) {
                 activeUtterances = 0
@@ -225,22 +222,6 @@ class VoiceGuide @Inject constructor(
      *  currently loaded — so picking a different engine in Settings actually takes
      *  effect (the old idempotent guard ignored later picks). */
     fun init(enginePackage: String? = null) {
-        // One of Vela's own in-process neural voices (vela.piper) — no Android TextToSpeech
-        // involved. The right synth is wired into [neural] by MapViewModel first. Do NOT shut the
-        // system `tts` down here — it stays as the fallback for languages the neural voice can't
-        // speak (see speakViaSystem); an unused instance is cheap.
-        if (enginePackage != null && enginePackage.startsWith("vela.")) {
-            if (useNeural && enginePackage == currentEngine) return
-            currentEngine = enginePackage
-            useNeural = true
-            ready = true // the neural synth loads + queues internally
-            working = neural != null
-            neural?.warmUp()
-            drainPendingLatest()
-            return
-        }
-        useNeural = false
-        neural?.stop()
         if (tts != null && enginePackage == currentEngine) return
         if (tts != null) shutdown()
         currentEngine = enginePackage
@@ -294,39 +275,28 @@ class VoiceGuide @Inject constructor(
         if (status != TextToSpeech.SUCCESS || t == null) {
             systemReady = false
             systemInitFailed = true
-            if (!useNeural) working = false // the PRIMARY engine failed to start
-            pending.clear() // nothing can speak the backlog — drop it instead of replaying it on a later init
-            if (useNeural) langUnavailable?.invoke(targetLang()) // fallback engine dead → "download a <lang> voice"
+            working = false
+            pending.clear()
             return
         }
-        // A measured pace + neutral pitch reads more like a real nav voice than the engine default.
-        // The LANGUAGE is set per-utterance now (speakViaSystem), keyed on the nav-text language —
-        // so a mid-drive app/system-language change is honored and the engine never reads a
-        // language it has no voice for.
         t.setSpeechRate(speechRate)
         t.setPitch(1.0f)
         systemReady = true
         systemInitFailed = false
         lastSystemLang = null // force setLanguage on the first utterance
-        if (!useNeural) { ready = true; working = true } // this system engine is the PRIMARY voice
+        ready = true
+        working = true
         drainPendingLatest()
     }
 
-    /** Speak only the MOST RECENT queued line when a voice (re-)attaches, never the whole backlog.
-     *  Prompts pile into [pending] while nothing can speak them (a drive with no voice installed,
-     *  then the user installs one mid-way or afterward); replaying the entire pile dumps a burst of
-     *  stale, out-of-order instructions all at once (user 2026-07-20: "it automatically started
-     *  speaking... random letters"). Only the latest is still relevant, and the live nav loop
-     *  re-announces the current maneuver anyway. */
+    /** Speak only the MOST RECENT queued line when a voice (re-)attaches, never the whole backlog. */
     private fun drainPendingLatest() {
         val last = pending.lastOrNull()
         pending.clear()
         last?.let { (text, interrupt) -> speakNow(text, interrupt) }
     }
 
-    /** Pick the highest-quality voice for [lang] that works offline — engines
-     *  often default to a low-quality or download-required voice; this lifts
-     *  guidance to the best installed one so it sounds natural in the car. */
+    /** Pick the highest-quality voice for [lang] that works offline. */
     private fun selectBestVoice(t: TextToSpeech, lang: Locale) {
         runCatching {
             val best = t.voices.orEmpty()
@@ -340,15 +310,6 @@ class VoiceGuide @Inject constructor(
         }
     }
 
-    /** Every TTS engine the user can pick: Vela's neural voice first (when its model is downloaded),
-     *  then every system TTS engine installed on the phone. Enumerated via [android.content.pm.PackageManager]
-     *  (the TTS_SERVICE intent) so the list is complete even when no Android [TextToSpeech] instance
-     *  is active — e.g. while the neural voice is the current engine and `tts` is null. */
-    // Cache the SLOW part — enumerating system TTS engines is a PackageManager binder IPC plus a
-    // per-engine loadLabel (resource load), which took >5 s on a slow flip phone and ANR'd the UI
-    // when called in composition. System engines don't install/uninstall mid-session, so cache the
-    // list for the process; the Vela neural entry is recomputed each call so it appears the instant
-    // its model finishes downloading. Callers should still make the FIRST call off the main thread.
     @Volatile private var installedEnginesCache: List<VoiceEngine>? = null
 
     fun availableEngines(): List<VoiceEngine> {
@@ -363,8 +324,7 @@ class VoiceGuide @Inject constructor(
             installedEnginesCache = list
             list
         }
-        val vela = if (VelaPiper.isReady(context)) listOf(VoiceEngine(VelaPiper.ENGINE_ID, VelaPiper.LABEL)) else emptyList()
-        return vela + installed
+        return installed
     }
 
     /**
@@ -449,14 +409,7 @@ class VoiceGuide @Inject constructor(
      *  is up), so the line needs no synthesis when it is spoken. Only the neural voice can keep
      *  audio; the same voice choice and text changes as [speakNow], so the prepared line matches. */
     fun prepare(text: String, onDone: () -> Unit = {}) {
-        val t = targetLang()
-        val n = neural
-        // Before the first drive nothing is initialized yet (init runs at Start) and [neural] is
-        // the chosen voice; once a system engine is the active one, there is nothing to prepare.
-        if (muted || n == null || (currentEngine != null && !useNeural) ||
-            !(n.voiceLanguage.let { it == null || it == t } || n.voiceFor(t))
-        ) { onDone(); return }
-        n.prepare(forSpeech(SpokenScript.forVoice(text, n.voiceLanguage ?: t, roadNameLatin)), onDone)
+        onDone()
     }
 
     /** Speak the nav-START opener ("Starting navigation. Head ... on <road>"), but hold it briefly if
@@ -473,7 +426,7 @@ class VoiceGuide @Inject constructor(
             val covered = roadNameLatin.keys.any { it.isNotEmpty() && text.contains(it) }
             val ready = covered || !hasForeignRun(text) || SystemClock.elapsedRealtime() >= deadline
             // Urgent: nothing is playing at a start, and it must not wait for the voice to load at
-            // background priority or behind prepare-ahead work (9 s on a cold start, 4a 2026-10-03).
+            // background priority or behind prepare-ahead work.
             if (ready) speak(text, interrupt = true) else focusHandler.postDelayed(::attempt, 200)
         }
         attempt()
@@ -486,25 +439,6 @@ class VoiceGuide @Inject constructor(
 
     private fun speakNow(text: String, interrupt: Boolean) {
         val t = targetLang()
-        val n = neural
-        // Use the neural voice ONLY when it can actually speak the target language. A single-
-        // language Piper model reading another language's text is gibberish (the "English voice
-        // read Russian" bug) — voiceLanguage==null means unknown → trust it (old behavior).
-        // ...or when another INSTALLED voice speaks it (the phone switched to Russian mid-drive
-        // with Irina installed): the synth swaps the loaded voice, the selection stays.
-        if (useNeural && n != null && (n.voiceLanguage.let { it == null || it == t } || n.voiceFor(t))) {
-            // The neural synth fires onDone exactly ONCE per speak() (including aborted/
-            // interrupted utterances — PiperSynth's finally), so the refcount balances without
-            // any interrupt special-casing. Do NOT reset the count here: the interrupted
-            // utterance's own onDone is still in flight and a reset would double-count it,
-            // abandoning focus while the interrupting prompt speaks.
-            val fresh = acquireFocus()
-            // Romanize any foreign-script name for this (Latin) neural voice so it isn't dropped
-            // (issue #184); the on-screen banner keeps the real local-script name.
-            val spoken = forSpeech(SpokenScript.forVoice(text, n.voiceLanguage ?: t, roadNameLatin))
-            afterFocusLead(fresh) { n.speak(spoken, interrupt) { releaseFocus() } }
-            return
-        }
         speakViaSystem(text, interrupt, t)
     }
 
@@ -570,13 +504,18 @@ class VoiceGuide @Inject constructor(
      *  "Street", "Pkwy" → "Parkway", "N" → "North", "I-80" → "Interstate 80". Google's markup
      *  (and so the on-screen banner) keeps the compact forms; this is for the spoken text only.
      *  Whole-word, so it never mangles a name that merely contains the letters. */
-    private fun forSpeech(text: String): String =
-        app.vela.core.i18n.NavStringsRegistry.current().expandForSpeech(text)
+    private fun forSpeech(text: String): String {
+        val expanded = app.vela.core.i18n.NavStringsRegistry.current().expandForSpeech(text)
+        return if (iraqiDialect && (targetLang().startsWith("ar") || lastSystemLang?.startsWith("ar") == true)) {
+            IraqiVoicePhrases.adapt(expanded)
+        } else {
+            expanded
+        }
+    }
 
     fun stop() {
         openerToken++ // cancel any deferred nav-start opener still waiting for its road name
         tts?.stop()
-        neural?.stop()
         // Drop any queued-but-unspoken prompts: once guidance stops (nav end / mute), a backlog is
         // stale and must not survive to be flushed later when a voice attaches (issue: stale burst).
         pending.clear()
@@ -589,7 +528,6 @@ class VoiceGuide @Inject constructor(
         ready = false
         systemReady = false
         lastSystemLang = null
-        neural?.stop()
         releaseAllFocus()
     }
 
