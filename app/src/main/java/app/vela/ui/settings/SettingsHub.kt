@@ -382,6 +382,8 @@ private val SEARCH_INDEX: List<Pair<Int, SettingsSection>> = listOf(
     R.string.settings_voice_library to SettingsSection.VOICE,
     R.string.settings_voice_advanced to SettingsSection.VOICE,
     R.string.settings_voice_test to SettingsSection.VOICE,
+    R.string.settings_voice_iraqi_dialect to SettingsSection.VOICE,
+    R.string.settings_voice_engine to SettingsSection.VOICE,
     // Search
     R.string.settings_voice_search_toggle to SettingsSection.SEARCH,
     R.string.settings_contacts_search to SettingsSection.SEARCH,

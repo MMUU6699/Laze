@@ -1399,8 +1399,8 @@
         <item quantity="other">%1$d عنصر</item>
     </plurals>
     <plurals name="dir_cameras_on_route">
-        <item quantity="one">واحد (%1$d)</item>
-        <item quantity="other">%1$d عنصر</item>
+        <item quantity="one">كاميرا واحدة على المسار (%1$d)</item>
+        <item quantity="other">%1$d كاميرات على هذا المسار</item>
     </plurals>
     <plurals name="area_pick_cells">
         <item quantity="one">تنزيل الاتجاهات والأماكن لهذه المنطقة: حوالي %1$s (%2$d من المنطقة)</item>
@@ -1411,56 +1411,56 @@
         <item quantity="other">أجزاء تم تنزيلها: %1$d قطعة، %2$s</item>
     </plurals>
     <plurals name="settings_cells_update_available">
-        <item quantity="one">واحد (%1$d)</item>
-        <item quantity="other">%1$d عنصر</item>
+        <item quantity="one">قطعة واحدة يتوفر لها تحديث جديد (%1$d)</item>
+        <item quantity="other">%1$d قطع يتوفر لها تحديث جديد</item>
     </plurals>
     <plurals name="place_review_count">
-        <item quantity="one">واحد (%1$d)</item>
-        <item quantity="other">%1$d عنصر</item>
+        <item quantity="one">تقييم واحد (%1$d)</item>
+        <item quantity="other">%1$d تقييم</item>
     </plurals>
     <plurals name="mapscreen_results_count">
-        <item quantity="one">واحد (%1$d)</item>
-        <item quantity="other">%1$d عنصر</item>
+        <item quantity="one">نتيجة واحدة (%1$d)</item>
+        <item quantity="other">%1$d نتيجة</item>
     </plurals>
     <plurals name="place_transit_stops">
-        <item quantity="one">واحد (%1$d)</item>
-        <item quantity="other">%1$d عنصر</item>
+        <item quantity="one">محطة واحدة (%1$d)</item>
+        <item quantity="other">%1$d محطات</item>
     </plurals>
     <plurals name="map_save_list">
-        <item quantity="one">واحد (%1$d)</item>
-        <item quantity="other">%1$d عنصر</item>
+        <item quantity="one">حفظ القائمة · مكان واحد (%1$d)</item>
+        <item quantity="other">حفظ القائمة · %1$d أماكن</item>
     </plurals>
     <plurals name="lists_place_count">
-        <item quantity="one">واحد (%1$d)</item>
-        <item quantity="other">%1$d عنصر</item>
+        <item quantity="one">مكان واحد (%1$d)</item>
+        <item quantity="other">%1$d أماكن</item>
     </plurals>
     <plurals name="place_fuel_updated_days">
-        <item quantity="one">Updated %d day ago</item>
-        <item quantity="other">Updated %d days ago</item>
+        <item quantity="one">تم التحديث منذ يوم واحد (%d)</item>
+        <item quantity="other">تم التحديث منذ %d أيام</item>
     </plurals>
     <plurals name="topcard_more_stops">
-        <item quantity="one">+%d more stop</item>
-        <item quantity="other">+%d more stops</item>
+        <item quantity="one">+محطة إضافية واحدة (%d)</item>
+        <item quantity="other">+%d محطات إضافية</item>
     </plurals>
     <plurals name="link_trip_places_missing">
-        <item quantity="one">واحد (%1$d)</item>
-        <item quantity="other">%1$d عنصر</item>
+        <item quantity="one">لم يتم العثور على مكان واحد (%1$d)</item>
+        <item quantity="other">لم يتم العثور على %1$d أماكن</item>
     </plurals>
     <plurals name="exp_chooser_alts">
-        <item quantity="one">واحد (%1$d)</item>
-        <item quantity="other">%1$d عنصر</item>
+        <item quantity="one">مسار بديل واحد (%1$d)</item>
+        <item quantity="other">%1$d مسارات بديلة</item>
     </plurals>
     <plurals name="bulk_selected">
-        <item quantity="one">واحد (%1$d)</item>
-        <item quantity="other">%1$d عنصر</item>
+        <item quantity="one">تم تحديد عنصر واحد (%1$d)</item>
+        <item quantity="other">تم تحديد %1$d عناصر</item>
     </plurals>
     <plurals name="bulk_remove_title">
-        <item quantity="one">واحد (%1$d)</item>
-        <item quantity="other">%1$d عنصر</item>
+        <item quantity="one">إزالة مكان واحد (%1$d)؟</item>
+        <item quantity="other">إزالة %1$d أماكن؟</item>
     </plurals>
     <plurals name="saved_route_stops">
-        <item quantity="one">واحد (%1$d)</item>
-        <item quantity="other">%1$d عنصر</item>
+        <item quantity="one">محطة واحدة (%1$d)</item>
+        <item quantity="other">%1$d محطات</item>
     </plurals>
 
     <string name="voice_health_dialog_title">إعداد التوجيه الصوتي بالعربية</string>
@@ -1511,4 +1511,6 @@
     <string name="search_expand_area">توسيع المنطقة</string>
     <string name="search_needs_internet">تحتاج اتصالاً بالإنترنت للبحث عن الأماكن</string>
     <string name="search_recents_clear_confirm">مسح سجل البحث الأخير؟</string>
+    <string name="place_no_phone">لا يتوفر رقم هاتف لهذا المكان</string>
+    <string name="place_closed">مغلق</string>
 </resources>

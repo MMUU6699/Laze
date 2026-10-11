@@ -1556,4 +1556,6 @@
     <string name="search_expand_area">Expand area</string>
     <string name="search_needs_internet">Internet connection required for places search</string>
     <string name="search_recents_clear_confirm">Clear recent searches?</string>
+    <string name="place_no_phone">No phone number available</string>
+    <string name="place_closed">Closed</string>
 </resources>

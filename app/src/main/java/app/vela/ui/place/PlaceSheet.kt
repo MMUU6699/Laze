@@ -861,35 +861,28 @@ fun PlaceSheet(
                             )
                         },
                 )
-                // Save + Share as compact header actions (preferred look). The name has weight(1f) and
-                // wraps to 2 lines if long, so these stay put without shoving it off.
-                // The STAR is the whole save/pin menu now (quick save, lists, note, home/work) —
-                // four circled buttons crowded the header, and the overflow's items were all
-                // save-family anyway (user 2026-07-10). D-pad-first via VelaMenu (docs/dpad.md).
-                var saveMenu by remember { mutableStateOf(false) }
+                var moreMenu by remember { mutableStateOf(false) }
                 Box {
                     HeaderCircleButton(
-                        icon = if (isSaved) Sym.Bookmark else Sym.BookmarkBorder,
-                        contentDescription = if (isSaved) stringResource(R.string.place_saved) else stringResource(R.string.place_save),
-                        tint = if (isSaved) MaterialTheme.colorScheme.primary else dim,
+                        icon = Sym.MoreVert,
+                        contentDescription = stringResource(R.string.place_more_options),
+                        tint = dim,
                         bg = dim,
-                    ) { saveMenu = true }
-                    VelaMenu(expanded = saveMenu, onDismissRequest = { saveMenu = false }) {
-                        // A drawn or imported line/area: it can be deleted from its list here.
-                        if (place.id.startsWith("shape:")) item(stringResource(R.string.draw_edit)) { saveMenu = false; app.vela.ui.ShapeActions.edit?.invoke() }
-                        if (place.id.startsWith("shape:")) item(stringResource(R.string.draw_delete)) { saveMenu = false; app.vela.ui.ShapeActions.delete?.invoke() }
-                        item(stringResource(if (isSaved) R.string.place_saved else R.string.place_save)) { saveMenu = false; onToggleSave() }
+                    ) { moreMenu = true }
+                    VelaMenu(expanded = moreMenu, onDismissRequest = { moreMenu = false }) {
+                        if (place.id.startsWith("shape:")) item(stringResource(R.string.draw_edit)) { moreMenu = false; app.vela.ui.ShapeActions.edit?.invoke() }
+                        if (place.id.startsWith("shape:")) item(stringResource(R.string.draw_delete)) { moreMenu = false; app.vela.ui.ShapeActions.delete?.invoke() }
+                        item(stringResource(if (isSaved) R.string.place_saved else R.string.place_save)) { moreMenu = false; onToggleSave() }
                         if (!isParking) {
-                            item(stringResource(R.string.place_save_to_list)) { saveMenu = false; showListChooser = true }
-                            if (inAnyList) item(stringResource(R.string.place_edit_note)) { saveMenu = false; showNoteEditor = true }
-                            if (inAnyList || isSaved) item(stringResource(R.string.place_choose_icon)) { saveMenu = false; onChooseIcon() }
-                            if (isSaved) item(stringResource(R.string.mapscreen_menu_rename)) { saveMenu = false; showSavedRename = true }
+                            item(stringResource(R.string.place_save_to_list)) { moreMenu = false; showListChooser = true }
+                            if (inAnyList) item(stringResource(R.string.place_edit_note)) { moreMenu = false; showNoteEditor = true }
+                            if (inAnyList || isSaved) item(stringResource(R.string.place_choose_icon)) { moreMenu = false; onChooseIcon() }
+                            if (isSaved) item(stringResource(R.string.mapscreen_menu_rename)) { moreMenu = false; showSavedRename = true }
                         }
-                        item(stringResource(R.string.place_set_as_home)) { saveMenu = false; onSetShortcut(ShortcutKind.HOME) }
-                        item(stringResource(R.string.place_set_as_work)) { saveMenu = false; onSetShortcut(ShortcutKind.WORK) }
+                        item(stringResource(R.string.place_set_as_home)) { moreMenu = false; onSetShortcut(ShortcutKind.HOME) }
+                        item(stringResource(R.string.place_set_as_work)) { moreMenu = false; onSetShortcut(ShortcutKind.WORK) }
                     }
                 }
-                ShareIconButton(place, dim)
                 HeaderCircleButton(Sym.Close, stringResource(R.string.place_close), dim, dim, onClick = onClose)
             }
 
@@ -960,7 +953,7 @@ fun PlaceSheet(
                     ).toString()
                 } else null,
                 place.priceText,
-                place.category,
+                ArabicCategoryNames.translate(place.category),
             )
             if (rest.isNotEmpty()) {
                 Text(
@@ -1001,119 +994,172 @@ fun PlaceSheet(
                 }
             }
             if (place.permanentlyClosed) {
-                // Dead POI — call it out clearly (Google-style red) even when Google
-                // sent no hours/status string at all (which is what "no hours" looked
-                // like before we parsed this).
-                Text(
-                    stringResource(R.string.place_permanently_closed),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFD93838),
+                Surface(
+                    color = Color(0xFFD93838).copy(alpha = 0.14f),
+                    shape = RoundedCornerShape(6.dp),
                     modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-            if (place.temporarilyClosed && !place.permanentlyClosed) {
-                // Owner-set temporary closure — banner it like Google does, and suppress the ordinary
-                // status/hours lines below (an "Opens 11:30 AM Tue" under a temp-closure reads as if the
-                // place will open then, which is exactly the misleading state the closure overrides).
-                Text(
-                    stringResource(R.string.place_temporarily_closed),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFD93838),
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
-            // Google's live status STRING is PRIMARY: it's the only source that knows an owner-set
-            // "closed today" (the weekly hours now carry holiday overrides, but not ad-hoc closures).
-            // Only when Google gives NO status do we fall back to an Open/Closed computed from the weekly
-            // hours (past-midnight-aware) — better than a blank, without trusting stale regular hours
-            // over a real closure.
-            // Ticks each minute so a sheet left open crosses an open/close boundary instead of showing
-            // "Open · Closes 9 PM" forever after 9 PM (the fallback is only used when Google sent no status).
-            val nowMinute by produceState(initialValue = app.vela.ui.DemoClock.now() ?: java.time.LocalDateTime.now()) {
-                while (true) {
-                    kotlinx.coroutines.delay(60_000)
-                    value = app.vela.ui.DemoClock.now() ?: java.time.LocalDateTime.now()
+                ) {
+                    Text(
+                        stringResource(R.string.place_permanently_closed),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (dark) Color(0xFFFF5449) else Color(0xFFD93838),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
                 }
-            }
-            val computedStatus = remember(place.hours, nowMinute) {
-                app.vela.core.util.OpeningHours.statusAt(place.hours, nowMinute)
-            }
-            val demoStatus = app.vela.ui.DemoClock.status(place) // screenshot clock, off unless the dial is set
-            val statusLine = demoStatus?.first ?: place.statusText
-                ?: computedStatus?.let { (if (it.open) "Open" else "Closed") + " · " + it.detail }
-            statusLine?.takeIf { !place.permanentlyClosed && !place.temporarilyClosed }?.let { status ->
-                // Google colors the status word (Open/Closed) and keeps the time
-                // in the normal ink color: "**Open** · Closes 9 PM".
-                val parts = status.split(Regex("\\s*[·⋅]\\s*"), limit = 2)
-                val statusInk = app.vela.ui.themedStatusColor(status, demoStatus?.second ?: place.openNow)
-                val annotated = buildAnnotatedString {
-                    withStyle(SpanStyle(color = statusInk, fontWeight = FontWeight.Bold)) {
-                        append(parts[0])
-                    }
-                    if (parts.size > 1) {
-                        withStyle(SpanStyle(color = ink)) { append("  ·  ${parts[1]}") }
+            } else if (place.temporarilyClosed) {
+                Surface(
+                    color = Color(0xFFD93838).copy(alpha = 0.14f),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.padding(top = 4.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.place_temporarily_closed),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (dark) Color(0xFFFF5449) else Color(0xFFD93838),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+            } else {
+                val nowMinute by produceState(initialValue = app.vela.ui.DemoClock.now() ?: java.time.LocalDateTime.now()) {
+                    while (true) {
+                        kotlinx.coroutines.delay(60_000)
+                        value = app.vela.ui.DemoClock.now() ?: java.time.LocalDateTime.now()
                     }
                 }
-                Text(annotated, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
-            }
-            // Holiday / special hours callout (Google shows these prominently — e.g. "Independence
-            // Day · Hours might differ" — not just buried on one day's row). The parser tags the
-            // holiday day's string with " · <label>"; surface the soonest one up top.
-            val holiday = remember(place.hours, nowMinute) {
-                upcomingHoliday(place.hours, nowMinute.toLocalDate())
-            }
-            if (!place.permanentlyClosed && !place.temporarilyClosed) holiday?.let { h ->
-                Text(
-                    buildAnnotatedString {
-                        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Color(0xFFE0A63C))) {
-                            append(h.label)
+                val computedStatus = remember(place.hours, nowMinute) {
+                    app.vela.core.util.OpeningHours.statusAt(place.hours, nowMinute)
+                }
+                val demoStatus = app.vela.ui.DemoClock.status(place)
+                val statusLine = demoStatus?.first ?: place.statusText
+                    ?: computedStatus?.let { (if (it.open) "Open" else "Closed") + " · " + it.detail }
+                statusLine?.let { status ->
+                    val isOpen = demoStatus?.second ?: place.openNow ?: (computedStatus?.open)
+                        ?: (!status.startsWith("Closed", ignoreCase = true) && !status.startsWith("Opens", ignoreCase = true))
+                    val badgeText = if (isOpen) stringResource(R.string.mapscreen_filter_open_now) else stringResource(R.string.place_closed)
+                    val badgeColor = if (isOpen) {
+                        if (dark) Color(0xFF6ED58B) else Color(0xFF1E8E3E)
+                    } else {
+                        if (dark) Color(0xFFFF5449) else Color(0xFFD93025)
+                    }
+                    val badgeBg = badgeColor.copy(alpha = 0.14f)
+
+                    val parts = status.split(Regex("\\s*[·⋅]\\s*"), limit = 2)
+                    val rawDetail = if (parts.size > 1) parts[1] else (computedStatus?.detail ?: "")
+                    val detailText = ArabicScheduleHelper.formatDetail(rawDetail)
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        Surface(
+                            color = badgeBg,
+                            shape = RoundedCornerShape(6.dp),
+                        ) {
+                            Text(
+                                text = badgeText,
+                                color = badgeColor,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            )
                         }
-                        withStyle(SpanStyle(color = dim)) { append("  ·  ${h.whenLabel} · ${h.hours}") }
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+                        if (detailText.isNotBlank()) {
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = detailText,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = ink,
+                            )
+                        }
+                    }
+                }
+                val holiday = remember(place.hours, nowMinute) {
+                    upcomingHoliday(place.hours, nowMinute.toLocalDate())
+                }
+                holiday?.let { h ->
+                    Text(
+                        buildAnnotatedString {
+                            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Color(0xFFE0A63C))) {
+                                append(h.label)
+                            }
+                            withStyle(SpanStyle(color = dim)) { append("  ·  ${h.whenLabel} · ${h.hours}") }
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
             }
             }
             }
-            // Quick-action pills FIRST — a highlighted Directions + short Call / Website, right under
-            // the identity block so Directions is reachable WITHOUT scrolling (Google's order). Save/
-            // Share live in the header; the actual phone number / website domain are tappable detail
-            // rows lower down (below the hours), out of the way of the primary action.
+
+            fun sharePlace() {
+                val lat = place.location.lat
+                val lng = place.location.lng
+                val shareText = "${place.name}\nhttps://www.google.com/maps/search/?api=1&query=${Uri.encode(place.name)}%20$lat%2C$lng"
+                runCatching {
+                    context.startActivity(
+                        Intent.createChooser(
+                            Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, shareText)
+                            },
+                            context.getString(R.string.place_share_place),
+                        ),
+                    )
+                }
+            }
+
+            // Quick-action pills: Directions, Start, Call, Share, Save prominently displayed Google-style
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                // 1. Directions (الاتجاهات)
                 ActionPill(Sym.Directions, stringResource(R.string.place_directions), emphasized = true, onClick = onDirections)
-                // START, right beside Directions (issue #272). Directions opens the picker, whose
-                // own Start sits BELOW the route list - with three routes on a large-font screen
-                // that is off the bottom of the sheet, so the common case (just take me there)
-                // needed a scroll. Not offered for the parked car, where you are already at the
-                // start of the walk and "Directions" is the useful verb.
+
+                // 2. Start (بدء)
                 if (onStartNavigation != null && !isParking) {
                     ActionPill(Sym.Navigation, stringResource(R.string.place_start), onClick = onStartNavigation)
                 }
                 if (isParking) {
                     ActionPill(Sym.Delete, stringResource(R.string.place_clear_parking), onClick = onClearParking)
                 }
-                // Google's own action (Order online / Reserve a table / Book online) when parsed.
+
+                // 3. Call (اتصال)
+                ActionPill(
+                    icon = Sym.Call,
+                    label = stringResource(R.string.place_call),
+                    enabled = place.phone != null,
+                    onClick = {
+                        val ph = place.phone
+                        if (ph != null) {
+                            val dialable = "tel:" + ph.filter { it.isDigit() || it == '+' }
+                            runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse(dialable))) }
+                        } else {
+                            Toast.makeText(context, context.getString(R.string.place_no_phone), Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                )
+
+                // 4. Share (مشاركة)
+                ActionPill(Sym.Share, stringResource(R.string.place_share), onClick = { sharePlace() })
+
+                // 5. Save (حفظ)
+                ActionPill(
+                    icon = if (isSaved) Sym.Bookmark else Sym.BookmarkBorder,
+                    label = stringResource(if (isSaved) R.string.place_saved else R.string.place_save),
+                    onClick = onToggleSave,
+                )
+
+                // Additional actions
                 if (!place.actionLabel.isNullOrBlank() && place.actionUrl != null && !app.vela.ui.HideExternalLinks.on.value) {
                     ActionPill(Icons.Default.Restaurant, place.actionLabel!!) {
                         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(place.actionUrl))) }
                     }
                 }
-                place.phone?.let { ph ->
-                    ActionPill(Sym.Call, stringResource(R.string.place_call)) {
-                        val dialable = "tel:" + ph.filter { it.isDigit() || it == '+' }
-                        runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse(dialable))) }
-                    }
-                }
-                // Save sits in the action row Google-style (outlined pill), alongside the save/read
-                // affordances in the header menu.
-                ActionPill(if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, stringResource(if (isSaved) R.string.place_saved else R.string.place_save), onClick = onToggleSave)
                 if (!app.vela.ui.HideExternalLinks.on.value) {
                     place.website?.let { site ->
                         ActionPill(Sym.Language, stringResource(R.string.place_website)) {
@@ -1121,12 +1167,6 @@ fun PlaceSheet(
                         }
                     }
                 }
-                // Street View - opens the IN-APP panorama viewer (keyless tile-stitch + GL sphere,
-                // 2026-07-15). Not gated by HideExternalLinks anymore: it's a first-class in-app
-                // surface now, not a hand-off to Google's app. A tap loads the nearest pano; no
-                // coverage shows a brief "no Street View here" toast.
-                // Hidden without Google: the imagery is Google's, and a pill that always answers
-                // "no Street View here" is worse than no pill.
                 if (!app.vela.ui.GoogleFree.on.value) {
                     ActionPill(Sym.Streetview, stringResource(R.string.place_street_view), onClick = onStreetView)
                 }
@@ -1231,18 +1271,23 @@ fun PlaceSheet(
                 }
             }
             place.fullAddress()?.let { addr ->
+                val copyAddress = {
+                    val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cb.setPrimaryClip(ClipData.newPlainText("address", addr))
+                    Toast.makeText(context, context.getString(R.string.place_address_copied), Toast.LENGTH_SHORT).show()
+                }
                 Row(
-                    Modifier.fillMaxWidth().padding(top = 14.dp),
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = copyAddress)
+                        .padding(top = 10.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Sym.Place, contentDescription = null, tint = dim, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(addr, style = MaterialTheme.typography.bodyMedium, color = ink, modifier = Modifier.weight(1f))
-                    IconButton(onClick = {
-                        val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        cb.setPrimaryClip(ClipData.newPlainText("address", addr))
-                        Toast.makeText(context, context.getString(R.string.place_address_copied), Toast.LENGTH_SHORT).show()
-                    }) {
+                    IconButton(onClick = copyAddress) {
                         Icon(Sym.ContentCopy, contentDescription = stringResource(R.string.place_copy_address), tint = dim, modifier = Modifier.size(18.dp))
                     }
                 }
@@ -2696,8 +2741,8 @@ private fun TransitStepRow(s: TransitStep, ink: Color, dim: Color, onWalkDirecti
         val canExpand = from != null && to != null
         var open by remember { mutableStateOf(false) }
         var steps by remember(from, to) { mutableStateOf<List<String>?>(null) }
-        if (open && canExpand) {
-            LaunchedEffect(from, to) { steps = onWalkDirections(from!!, to!!) }
+        if (open && from != null && to != null) {
+            LaunchedEffect(from, to) { steps = onWalkDirections(from, to) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
             Icon(transitModeIcon(s.mode), null, tint = dim, modifier = Modifier.padding(top = 2.dp).size(18.dp))
@@ -4364,9 +4409,23 @@ private fun AboutTab(
 /** One Google-style action pill — a rounded chip with an icon + label, sized to its content so a row
  *  of them scrolls horizontally. [emphasized] = the filled primary treatment (Directions). */
 @Composable
-private fun ActionPill(icon: ImageVector, label: String, emphasized: Boolean = false, onClick: () -> Unit) {
-    val bg = if (emphasized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-    val fg = if (emphasized) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+private fun ActionPill(
+    icon: ImageVector,
+    label: String,
+    emphasized: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val bg = when {
+        !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
+        emphasized -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+    }
+    val fg = when {
+        !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        emphasized -> MaterialTheme.colorScheme.onPrimary
+        else -> MaterialTheme.colorScheme.primary
+    }
     Row(
         Modifier
             .clip(androidx.compose.foundation.shape.CircleShape)
