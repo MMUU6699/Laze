@@ -41,15 +41,22 @@ object CameraFacing {
     data class Nearest(val distanceM: Double, val bearingDeg: Double)
 
     /** The nearest non-degenerate segment of [poly] to [p], or null when there is none. */
-    fun nearestSegment(poly: List<LatLng>, p: LatLng): Nearest? {
+    fun nearestSegment(poly: List<LatLng>, p: LatLng, maxDistanceM: Double = Double.MAX_VALUE): Nearest? {
         if (poly.size < 2) return null
         val latScale = Math.cos(Math.toRadians(p.lat))
-        var bestD = Double.MAX_VALUE
-        var bestBx = 0.0
-        var bestBy = 0.0
+        val maxDeg = if (maxDistanceM < 100_000.0) maxDistanceM / 111_320.0 else Double.MAX_VALUE
+        var bestD = maxDeg
+        var bestBx = Double.NaN
+        var bestBy = Double.NaN
+        val degTolLng = if (maxDeg < Double.MAX_VALUE) maxDeg / Math.max(latScale, 0.1) else Double.MAX_VALUE
         for (i in 0 until poly.size - 1) {
             val a = poly[i]
             val b = poly[i + 1]
+            // Fast bounding box reject for long polylines:
+            if (maxDeg < Double.MAX_VALUE) {
+                if ((a.lat > p.lat + bestD && b.lat > p.lat + bestD) || (a.lat < p.lat - bestD && b.lat < p.lat - bestD)) continue
+                if ((a.lng > p.lng + degTolLng && b.lng > p.lng + degTolLng) || (a.lng < p.lng - degTolLng && b.lng < p.lng - degTolLng)) continue
+            }
             // Local flat frame in degrees of latitude: exact enough over one segment.
             val bx = (b.lng - a.lng) * latScale
             val by = b.lat - a.lat
@@ -65,7 +72,7 @@ object CameraFacing {
                 bestBy = by
             }
         }
-        if (bestD == Double.MAX_VALUE) return null
+        if (bestBx.isNaN() || bestBy.isNaN() || bestD >= maxDeg) return null
         val bearing = (Math.toDegrees(Math.atan2(bestBx, bestBy)) + 360.0) % 360.0
         return Nearest(bestD * 111_320.0, bearing)
     }
@@ -75,7 +82,7 @@ object CameraFacing {
      * [poly] and, if its facing is known, looks along the nearest segment's axis.
      */
     fun onRoute(poly: List<LatLng>, p: LatLng, facingDeg: Double?, maxOffRouteM: Double): Boolean {
-        val n = nearestSegment(poly, p) ?: return false
+        val n = nearestSegment(poly, p, maxOffRouteM) ?: return false
         return n.distanceM <= maxOffRouteM && seesRoad(facingDeg, n.bearingDeg)
     }
 }

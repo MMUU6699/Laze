@@ -84,4 +84,68 @@ object CrashCatcher {
             title = "Share crash report",
         )
     }
+
+    /**
+     * Checks ActivityManager.getHistoricalProcessExitReasons (API 30+) on boot.
+     * Records any abnormal termination (OOM / native crash / ANR / signal kill) to disk
+     * under `filesDir/diag/crash/crash-exit-<timestamp>.txt` and to DiagLog.
+     */
+    fun checkHistoricalExitReasons(context: Context, diagLog: app.vela.core.diag.DiagLog? = null) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager ?: return
+        val exitList = runCatching { am.getHistoricalProcessExitReasons(context.packageName, 0, 5) }.getOrNull() ?: return
+        val lastAbnormal = exitList.firstOrNull { exit ->
+            exit.reason != android.app.ApplicationExitInfo.REASON_USER_REQUESTED &&
+            exit.reason != android.app.ApplicationExitInfo.REASON_USER_STOPPED &&
+            exit.reason != android.app.ApplicationExitInfo.REASON_EXIT_SELF
+        } ?: return
+
+        val prefs = context.getSharedPreferences("vela_exit_diag", Context.MODE_PRIVATE)
+        val lastRecordedTimestamp = prefs.getLong("last_exit_ts", 0L)
+        if (lastAbnormal.timestamp <= lastRecordedTimestamp) return
+        prefs.edit().putLong("last_exit_ts", lastAbnormal.timestamp).apply()
+
+        val reasonName = when (lastAbnormal.reason) {
+            android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY (OOM killer)"
+            android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "NATIVE_CRASH"
+            android.app.ApplicationExitInfo.REASON_ANR -> "ANR"
+            android.app.ApplicationExitInfo.REASON_CRASH -> "UNCAUGHT_EXCEPTION_CRASH"
+            android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE_USAGE"
+            android.app.ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED (status=${lastAbnormal.status})"
+            android.app.ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "DEPENDENCY_DIED"
+            android.app.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INITIALIZATION_FAILURE"
+            else -> "OTHER (${lastAbnormal.reason})"
+        }
+
+        val traceSnippet = runCatching {
+            lastAbnormal.traceInputStream?.use { stream ->
+                val buf = ByteArray(8192)
+                val read = stream.read(buf)
+                if (read > 0) String(buf, 0, read) else null
+            }
+        }.getOrNull()
+
+        val reportText = buildString {
+            append("Vela historical process exit report\n")
+            append("when: ").append(lastAbnormal.timestamp).append('\n')
+            append("reason: ").append(reasonName).append(" (code: ").append(lastAbnormal.reason).append(")\n")
+            append("description: ").append(lastAbnormal.description ?: "none").append('\n')
+            append("importance: ").append(lastAbnormal.importance).append('\n')
+            append("pss: ").append(lastAbnormal.pss / 1024).append(" MB\n")
+            append("rss: ").append(lastAbnormal.rss / 1024).append(" MB\n")
+            append("version: ").append(BuildConfig.VERSION_NAME).append(" (").append(BuildConfig.VERSION_CODE).append(")\n")
+            append("android: API ").append(Build.VERSION.SDK_INT)
+                .append(" — ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append("\n\n")
+            append("=== settings ===\n").append(SettingsDump.line(context)).append("\n\n")
+            if (!traceSnippet.isNullOrBlank()) {
+                append("=== trace snippet ===\n").append(traceSnippet).append("\n\n")
+            }
+        }
+
+        File(dir(context), "crash-exit-${lastAbnormal.timestamp}.txt").writeText(reportText)
+        prune(context)
+        android.util.Log.w("VelaApp", "Previous abnormal process exit detected: $reasonName (pss=${lastAbnormal.pss / 1024}MB)")
+        diagLog?.record("process_exit", reasonName, "pss=${lastAbnormal.pss / 1024}MB desc=${lastAbnormal.description}")
+        TripNote.add("prev-exit: $reasonName pss=${lastAbnormal.pss / 1024}MB")
+    }
 }

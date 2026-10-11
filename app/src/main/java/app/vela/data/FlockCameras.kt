@@ -3,6 +3,7 @@ package app.vela.data
 import android.content.Context
 import app.vela.core.data.AlprCamera
 import app.vela.core.model.LatLng
+import app.vela.core.model.distanceTo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -206,24 +207,50 @@ object FlockCameras {
         val pad = 0.01
         val r0 = rowOf(polyline.minOf { it.lat } - pad); val r1 = rowOf(polyline.maxOf { it.lat } + pad)
         val c0 = rowOf(polyline.minOf { it.lng } - pad); val c1 = rowOf(polyline.maxOf { it.lng } + pad)
-        val out = ArrayList<AlprCamera>()
-        var r = r0
-        while (r <= r1) {
-            var c = c0
-            while (c <= c1) {
-                grid[key(r, c)]?.let { bucket ->
-                    for (i in bucket) {
-                        val p = LatLng(lat[i], lng[i])
-                        val d = dir.getOrElse(i) { Float.NaN }
-                        val facing = if (d.isNaN()) null else d.toDouble()
-                        if (app.vela.core.nav.CameraFacing.onRoute(polyline, p, facing, meters)) {
-                            out.add(AlprCamera(p, op[i], dirStr(i)))
-                        }
-                    }
+        val boxCells = (r1 - r0 + 1) * (c1 - c0 + 1)
+        val candidateBuckets: List<List<Int>> = if (boxCells > 25 && polyline.size > 20) {
+            // Long route optimization: bounding box would scan thousands of cells that the route never passes.
+            // Sample cells along polyline with 1-cell radius margin.
+            val keys = HashSet<Long>()
+            var lastP: LatLng? = null
+            for (p in polyline) {
+                val lp = lastP
+                if (lp == null || lp.distanceTo(p) >= 500.0) {
+                    val pr = rowOf(p.lat); val pc = rowOf(p.lng)
+                    for (dr in -1..1) for (dc in -1..1) keys.add(key(pr + dr, pc + dc))
+                    lastP = p
                 }
-                c++
             }
-            r++
+            val lastPoint = polyline.last()
+            val prEnd = rowOf(lastPoint.lat); val pcEnd = rowOf(lastPoint.lng)
+            for (dr in -1..1) for (dc in -1..1) keys.add(key(prEnd + dr, pcEnd + dc))
+            keys.mapNotNull { grid[it] }
+        } else {
+            val buckets = ArrayList<List<Int>>()
+            var r = r0
+            while (r <= r1) {
+                var c = c0
+                while (c <= c1) {
+                    grid[key(r, c)]?.let { buckets.add(it) }
+                    c++
+                }
+                r++
+            }
+            buckets
+        }
+
+        val out = ArrayList<AlprCamera>()
+        val seen = HashSet<Int>()
+        for (bucket in candidateBuckets) {
+            for (i in bucket) {
+                if (!seen.add(i)) continue
+                val p = LatLng(lat[i], lng[i])
+                val d = dir.getOrElse(i) { Float.NaN }
+                val facing = if (d.isNaN()) null else d.toDouble()
+                if (app.vela.core.nav.CameraFacing.onRoute(polyline, p, facing, meters)) {
+                    out.add(AlprCamera(p, op[i], dirStr(i)))
+                }
+            }
         }
         return out
     }

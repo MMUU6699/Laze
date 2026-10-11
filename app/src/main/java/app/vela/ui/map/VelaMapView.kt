@@ -3654,7 +3654,8 @@ fun VelaMapView(
                             box[0] = pts.minOf { it.latitude() }; box[1] = pts.minOf { it.longitude() }
                             box[2] = pts.maxOf { it.latitude() }; box[3] = pts.maxOf { it.longitude() }
                         }
-                        val f = Feature.fromGeometry(LineString.fromLngLats(pts))
+                        val finalPts = if (hi - lo > 5000.0 && pts.size > 200) simplifyPoints(pts, 15.0) else pts
+                        val f = Feature.fromGeometry(LineString.fromLngLats(finalPts))
                         f.addNumberProperty(ROUTE_GEN_PROP, gen)
                         return FeatureCollection.fromFeature(f)
                     }
@@ -9400,6 +9401,53 @@ private val TRAFFIC_MODERATE = android.graphics.Color.parseColor("#E8923D") // a
 private val TRAFFIC_HEAVY = android.graphics.Color.parseColor("#D93838")    // red
 private val TRAFFIC_SEVERE = android.graphics.Color.parseColor("#A11D1D")   // dark red
 
+/** Douglas-Peucker point simplification for long route lines and tails. */
+private fun simplifyPoints(pts: List<Point>, tolM: Double): List<Point> {
+    if (pts.size <= 2) return pts
+    val keep = BooleanArray(pts.size)
+    keep[0] = true
+    keep[pts.size - 1] = true
+    val stack = ArrayDeque<IntArray>()
+    stack.add(intArrayOf(0, pts.size - 1))
+    val mPerLat = 111_320.0
+    while (stack.isNotEmpty()) {
+        val (a, b) = stack.removeLast()
+        if (b - a < 2) continue
+        val pa = pts[a]
+        val pb = pts[b]
+        val midLat = (pa.latitude() + pb.latitude()) / 2.0
+        val mPerLng = mPerLat * Math.cos(Math.toRadians(midLat))
+        val bx = (pb.longitude() - pa.longitude()) * mPerLng
+        val by = (pb.latitude() - pa.latitude()) * mPerLat
+        val len2 = bx * bx + by * by
+        var best = -1
+        var bestD = tolM
+        for (i in a + 1 until b) {
+            val p = pts[i]
+            val px = (p.longitude() - pa.longitude()) * mPerLng
+            val py = (p.latitude() - pa.latitude()) * mPerLat
+            val d = if (len2 <= 0.0) {
+                Math.hypot(px, py)
+            } else {
+                val t = ((px * bx + py * by) / len2).coerceIn(0.0, 1.0)
+                Math.hypot(px - bx * t, py - by * t)
+            }
+            if (d > bestD) {
+                bestD = d
+                best = i
+            }
+        }
+        if (best >= 0) {
+            keep[best] = true
+            stack.add(intArrayOf(a, best))
+            stack.add(intArrayOf(best, b))
+        }
+    }
+    val out = ArrayList<Point>(pts.size / 4)
+    for (i in pts.indices) if (keep[i]) out.add(pts[i])
+    return out
+}
+
 /** The traffic stretches of [route] as one line feature each, colored by level, starting no
  *  earlier than the driven fraction [p]. Fractions are of the route's length. */
 private fun trafficSpanLines(route: List<LatLng>, spans: List<Triple<Float, Float, Int>>, p: Float): FeatureCollection {
@@ -9409,8 +9457,9 @@ private fun trafficSpanLines(route: List<LatLng>, spans: List<Triple<Float, Floa
     val total = cum.last()
     if (total <= 0.0) return FeatureCollection.fromFeatures(emptyList<Feature>())
     fun at(m: Double): Point {
-        var i = 1
-        while (i < cum.size - 1 && cum[i] < m) i++
+        var idx = cum.binarySearch(m)
+        if (idx < 0) idx = -(idx + 1)
+        val i = idx.coerceIn(1, cum.size - 1)
         val seg = cum[i] - cum[i - 1]
         val f = if (seg <= 0.0) 0.0 else ((m - cum[i - 1]) / seg).coerceIn(0.0, 1.0)
         val a = route[i - 1]; val b = route[i]
@@ -9421,10 +9470,17 @@ private fun trafficSpanLines(route: List<LatLng>, spans: List<Triple<Float, Floa
         if (m1 - m0 < 1.0) return@mapNotNull null
         val pts = ArrayList<Point>()
         pts.add(at(m0))
-        for (i in route.indices) if (cum[i] > m0 && cum[i] < m1) pts.add(Point.fromLngLat(route[i].lng, route[i].lat))
+        var i0 = cum.binarySearch(m0)
+        if (i0 < 0) i0 = -(i0 + 1)
+        var i1 = cum.binarySearch(m1)
+        if (i1 < 0) i1 = -(i1 + 1)
+        for (i in i0 until minOf(i1, route.size)) {
+            if (cum[i] > m0 && cum[i] < m1) pts.add(Point.fromLngLat(route[i].lng, route[i].lat))
+        }
         pts.add(at(m1))
+        val finalPts = if (pts.size > 200) simplifyPoints(pts, 15.0) else pts
         val c = trafficLevelColor(lvl)
-        Feature.fromGeometry(LineString.fromLngLats(pts)).apply {
+        Feature.fromGeometry(LineString.fromLngLats(finalPts)).apply {
             addStringProperty("color", String.format("#%06X", c and 0xFFFFFF))
         }
     }
@@ -9627,6 +9683,16 @@ private fun applyData(
             FeatureCollection.fromFeatures(emptyList<Feature>())
         }
         style.getSourceAs<GeoJsonSource>(ROUTE_SRC)?.setGeoJson(routeFc)
+        if (route.isEmpty()) {
+            val emptyFc = FeatureCollection.fromFeatures(emptyList<Feature>())
+            style.getSourceAs<GeoJsonSource>(ROUTE_AHEAD_SRC)?.setGeoJson(emptyFc)
+            style.getSourceAs<GeoJsonSource>(ROUTE_TAIL_SRC)?.setGeoJson(emptyFc)
+            style.getSourceAs<GeoJsonSource>(ROUTE_CUT_SRC)?.setGeoJson(emptyFc)
+            style.getSourceAs<GeoJsonSource>(ROUTE_AHEAD_SRC_B)?.setGeoJson(emptyFc)
+            style.getSourceAs<GeoJsonSource>(ROUTE_TAIL_SRC_B)?.setGeoJson(emptyFc)
+            style.getSourceAs<GeoJsonSource>(ROUTE_CUT_SRC_B)?.setGeoJson(emptyFc)
+            style.getSourceAs<GeoJsonSource>(ROUTE_TRAFFIC_SRC)?.setGeoJson(emptyFc)
+        }
         // Mid-nav ROUTE SWAP (reroute / faster route): seed the ahead layer with the WHOLE new
         // route immediately — the ticker only repaints it after the puck re-engages and moves a
         // throttle unit, and until then the new geometry showed entirely traversed-gray with the

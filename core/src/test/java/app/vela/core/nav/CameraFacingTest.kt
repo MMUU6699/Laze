@@ -88,4 +88,23 @@ class CameraFacingTest {
         assertEquals(90.0, CameraFacing.axisDiff(0.0, 270.0), 1e-9)
         assertEquals(10.0, CameraFacing.axisDiff(10.0, 180.0), 1e-9)
     }
+
+    @Test fun `long polyline search finds nearby camera and rejects far camera efficiently`() {
+        // Synthesize a 350 km route with 5000 points
+        val longRoute = (0..5000).map { i ->
+            val frac = i / 5000.0
+            LatLng(24.0 + frac * 3.0, 46.0 + frac * 3.0)
+        }
+        val midPoint = longRoute[2500]
+        val latScale = Math.cos(Math.toRadians(midPoint.lat))
+        val nearbyCamera = LatLng(midPoint.lat, midPoint.lng + 20.0 / (111_320.0 * latScale))
+        val farCamera = LatLng(midPoint.lat + 0.05, midPoint.lng - 0.05) // ~7.8 km perpendicular to diagonal route
+
+        assertTrue(CameraFacing.onRoute(longRoute, nearbyCamera, null, 45.0))
+        assertFalse(CameraFacing.onRoute(longRoute, farCamera, null, 45.0))
+
+        val n = CameraFacing.nearestSegment(longRoute, nearbyCamera, 45.0)
+        assertTrue(n != null && n.distanceM <= 25.0)
+        assertNull(CameraFacing.nearestSegment(longRoute, farCamera, 45.0))
+    }
 }

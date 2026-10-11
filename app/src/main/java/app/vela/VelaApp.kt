@@ -67,6 +67,26 @@ class VelaApp : Application(), coil.ImageLoaderFactory {
         super.onCreate()
         // Uncaught exception crash catcher: persists crash report to disk so crashes can be inspected on next boot
         CrashCatcher.install(this) { runCatching { diag.snapshot() }.getOrDefault(emptyList()) }
+        CrashCatcher.checkHistoricalExitReasons(this, diag)
+
+        if (BuildConfig.DEBUG) {
+            android.os.StrictMode.setThreadPolicy(
+                android.os.StrictMode.ThreadPolicy.Builder()
+                    .detectDiskReads()
+                    .detectDiskWrites()
+                    .detectNetwork()
+                    .penaltyLog()
+                    .build()
+            )
+            android.os.StrictMode.setVmPolicy(
+                android.os.StrictMode.VmPolicy.Builder()
+                    .detectLeakedSqlLiteObjects()
+                    .detectLeakedClosableObjects()
+                    .penaltyLog()
+                    .build()
+            )
+        }
+
         // Device memory class first: the Coil cap and the eager-warm decisions read it.
         app.vela.ui.MemoryPressure.init(this)
         app.vela.ui.SpeechPreload.init(this) // after MemoryPressure: its default reads the RAM tier
@@ -204,8 +224,5 @@ class VelaApp : Application(), coil.ImageLoaderFactory {
         app.vela.ui.map.MapFonts.init(this) // Roboto basemap glyphs (cached patched style + async refresh)
         Onboarding.init(this)
         app.vela.ui.WhatsNew.init(this)
-        // Persist any fatal crash (stack trace + breadcrumbs) so it survives the
-        // restart and can be exported from Settings → Diagnostics next launch.
-        CrashCatcher.install(this) { diag.snapshot() }
     }
 }

@@ -514,8 +514,13 @@ class MapViewModel @Inject constructor(
     val state: StateFlow<MapUiState> = _state.asStateFlow()
 
     private val vmExceptionHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
-        android.util.Log.e("MapViewModel", "Unhandled coroutine error", throwable)
+        if (throwable !is kotlinx.coroutines.CancellationException) {
+            android.util.Log.e("MapViewModel", "Unhandled coroutine error", throwable)
+            diag.record("coroutine_error", throwable.javaClass.simpleName, throwable.message)
+            app.vela.diag.TripNote.add("coroutine-err: ${throwable.javaClass.simpleName}: ${throwable.message}")
+        }
     }
+    private val safeScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + vmExceptionHandler)
 
     private var destination: LatLng? = null
     private var mapCenter: LatLng? = null
@@ -566,9 +571,9 @@ class MapViewModel @Inject constructor(
         override fun gateMeasuredSpeed(raw: Float, dt: Double): Float? = this@MapViewModel.gateMeasuredSpeed(raw, dt)
         override fun onNavRoadLatin(map: Map<String, String>) = this@MapViewModel.onNavRoadLatin(map)
     }
-    private val nav = NavController(appContext, viewModelScope, _state, navSession, locationProvider, dataSource, tripStore, voice, diag, http, navHost)
+    private val nav = NavController(appContext, safeScope, _state, navSession, locationProvider, dataSource, tripStore, voice, diag, http, navHost)
     // UK gas stations get their price from the Fuel Finder file (SPEC 5.8). Above init like nav.
-    private val ukFuel = UkFuelPrices(appContext, viewModelScope, _state, http)
+    private val ukFuel = UkFuelPrices(appContext, safeScope, _state, http)
 
 
     init {
@@ -4827,6 +4832,9 @@ class MapViewModel @Inject constructor(
         destination = null
         routeJob?.cancel() // an in-flight directions fetch must not repopulate the route we're backing out of
         modeEtaJob?.cancel(); modeEtaKey = null
+        flockRouteJob?.cancel()
+        roadFeaturesJob?.cancel()
+        namingJob?.cancel()
         _state.update {
             it.copy(
                 routes = emptyList(), activeRoute = null, directionsOpen = false,
@@ -4835,7 +4843,7 @@ class MapViewModel @Inject constructor(
                 showSteps = false, previewStepIndex = null,
                 directionsOrigin = null, pickingOrigin = false, pickingDest = false, directionsReversed = false,
                 directionsWaypoints = emptyList(), pickingStop = false, pickOnMap = null,
-                alongRouteDest = null, editingStops = false,
+                alongRouteDest = null, editingStops = false, flockOnRoute = emptyList(),
             )
         }
     }
@@ -7063,7 +7071,7 @@ class MapViewModel @Inject constructor(
     ) {
         flockRouteJob?.cancel()
         if (!app.vela.ui.FlockRouteAlert.on.value) return
-        flockRouteJob = viewModelScope.launch {
+        flockRouteJob = viewModelScope.launch(vmExceptionHandler) {
             val counts = withContext(Dispatchers.Default) {
                 val local = app.vela.data.FlockCameras.isLoaded
                 routes.map { r ->
@@ -9265,7 +9273,7 @@ class MapViewModel @Inject constructor(
             if (cLat in (b[0] + insLat)..(b[2] - insLat) && cLng in (b[1] + insLng)..(b[3] - insLng)) return
         }
         controlsJob?.cancel()
-        controlsJob = viewModelScope.launch {
+        controlsJob = viewModelScope.launch(vmExceptionHandler) {
             delay(350)
             // Re-check ownership AFTER the settle, not just when the job was scheduled (user
             // 2026-09-18: "stoplights and stop signs rendered that probably shouldn't be", off to
@@ -9373,7 +9381,7 @@ class MapViewModel @Inject constructor(
             if (cLat in (b[0] + insLat)..(b[2] - insLat) && cLng in (b[1] + insLng)..(b[3] - insLng)) return
         }
         speedCamJob?.cancel()
-        speedCamJob = viewModelScope.launch {
+        speedCamJob = viewModelScope.launch(vmExceptionHandler) {
             delay(350)
             val padLat = (north - south) * 0.5; val padLng = (east - west) * 0.5
             val s = south - padLat; val n = north + padLat; val w = west - padLng; val e = east + padLng
@@ -9442,7 +9450,7 @@ class MapViewModel @Inject constructor(
             if (cLat in (b[0] + insLat)..(b[2] - insLat) && cLng in (b[1] + insLng)..(b[3] - insLng)) return
         }
         satDeepJob?.cancel()
-        satDeepJob = viewModelScope.launch {
+        satDeepJob = viewModelScope.launch(vmExceptionHandler) {
             kotlinx.coroutines.delay(350)
             val level = withContext(Dispatchers.IO) {
                 runCatching {
@@ -9492,7 +9500,7 @@ class MapViewModel @Inject constructor(
         val cLat = (south + north) / 2; val cLng = (west + east) / 2
         imageryYearBox?.let { b -> if (cLat in b[0]..b[2] && cLng in b[1]..b[3]) return }
         imageryYearJob?.cancel()
-        imageryYearJob = viewModelScope.launch {
+        imageryYearJob = viewModelScope.launch(vmExceptionHandler) {
             val year = withContext(Dispatchers.IO) {
                 runCatching {
                     val url = "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/identify" +
@@ -9553,7 +9561,7 @@ class MapViewModel @Inject constructor(
         if (key == transitLinesKey) return
         transitLinesKey = key
         transitLinesJob?.cancel()
-        transitLinesJob = viewModelScope.launch {
+        transitLinesJob = viewModelScope.launch(vmExceptionHandler) {
             delay(500)
             fun cellKey(c: Pair<Int, Int>) = "$apiZoom:${c.first}:${c.second}"
             fun publish() {
@@ -9627,7 +9635,7 @@ class MapViewModel @Inject constructor(
             if (cLat in (b[0] + insLat)..(b[2] - insLat) && cLng in (b[1] + insLng)..(b[3] - insLng)) return
         }
         transitStopsJob?.cancel()
-        transitStopsJob = viewModelScope.launch {
+        transitStopsJob = viewModelScope.launch(vmExceptionHandler) {
             delay(350)
             val padLat = (north - south) * 0.5; val padLng = (east - west) * 0.5
             val s0 = south - padLat; val n0 = north + padLat; val w0 = west - padLng; val e0 = east + padLng
