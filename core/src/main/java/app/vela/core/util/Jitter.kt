@@ -9,7 +9,7 @@ import java.util.Random
  */
 object Jitter {
     /** Replaceable so a test can make the spread deterministic. */
-    @Volatile var random: Random = Random()
+    @Volatile var random: Random = java.security.SecureRandom()
 
     /** A factor drawn uniformly from [1 - spread, 1 + spread]. */
     fun factor(spread: Double = DEFAULT_SPREAD): Double {
