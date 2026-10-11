@@ -40,8 +40,15 @@ fun formatDistance(meters: Double): String =
         if (feet < 1000) "${if (feet < 100) maxOf(10, (feet / 10).roundToInt() * 10) else (feet / 50).roundToInt() * 50} ft"
         else String.format(Locale.US, "%.1f mi", meters / 1609.344)
     } else {
-        if (meters < 1000) "${meters.roundToInt()} m"
-        else String.format(Locale.US, "%.1f km", meters / 1000.0)
+        val isAr = AppLocale.effective().language == "ar"
+        if (meters < 1000) {
+            val rounded = meters.roundToInt()
+            if (isAr) "$rounded م" else "$rounded m"
+        } else {
+            val km = meters / 1000.0
+            if (isAr) String.format(AppLocale.effective(), "%.1f كم", km)
+            else String.format(Locale.US, "%.1f km", km)
+        }
     }
 
 /** An area in the user's units: sq ft, acres, sq mi, or m², hectares, km². */
@@ -53,10 +60,24 @@ fun formatArea(m2: Double): String =
             m2 < 2_589_988 -> String.format(Locale.US, "%.1f acres", sqft / 43_560)
             else -> String.format(Locale.US, "%.1f sq mi", m2 / 2_589_988)
         }
-    } else when {
-        m2 < 10_000 -> String.format(Locale.US, "%,d m\u00B2", m2.roundToInt())
-        m2 < 1_000_000 -> String.format(Locale.US, "%.1f ha", m2 / 10_000)
-        else -> String.format(Locale.US, "%.1f km\u00B2", m2 / 1_000_000)
+    } else {
+        val isAr = AppLocale.effective().language == "ar"
+        when {
+            m2 < 10_000 -> {
+                val rounded = m2.roundToInt()
+                if (isAr) "$rounded م²" else String.format(Locale.US, "%,d m\u00B2", rounded)
+            }
+            m2 < 1_000_000 -> {
+                val ha = m2 / 10_000
+                if (isAr) String.format(AppLocale.effective(), "%.1f هكتار", ha)
+                else String.format(Locale.US, "%.1f ha", ha)
+            }
+            else -> {
+                val km2 = m2 / 1_000_000
+                if (isAr) String.format(AppLocale.effective(), "%.1f كم²", km2)
+                else String.format(Locale.US, "%.1f km\u00B2", km2)
+            }
+        }
     }
 
 fun formatDuration(seconds: Double): String {
@@ -91,7 +112,8 @@ fun formatSpeed(metersPerSecond: Float): Pair<Int, String> =
     if (Units.imperial.value) {
         (metersPerSecond * 2.236936).roundToInt() to "mph"
     } else {
-        (metersPerSecond * 3.6).roundToInt() to "km/h"
+        val isAr = AppLocale.effective().language == "ar"
+        (metersPerSecond * 3.6).roundToInt() to (if (isAr) "كم/س" else "km/h")
     }
 
 /** Posted speed limit (given in km/h from OSM via the obf engine or the overlay) as a (value, unit) pair in the display
@@ -99,7 +121,10 @@ fun formatSpeed(metersPerSecond: Float): Pair<Int, String> =
  *  56.0 km/h → ×0.621371 = 34.8 → rounds back to 35 mph (all 25–85 mph US limits round-trip). */
 fun formatSpeedLimit(kmh: Double): Pair<Int, String> =
     if (Units.imperial.value) (kmh * 0.621371).roundToInt() to "mph"
-    else kmh.roundToInt() to "km/h"
+    else {
+        val isAr = AppLocale.effective().language == "ar"
+        kmh.roundToInt() to (if (isAr) "كم/س" else "km/h")
+    }
 
 /** The device's 12/24-hour clock SETTING (Settings > System > Date & time), which is separate
  *  from the locale: a US-English phone set to 24-hour shows "19:42" everywhere else and used to
