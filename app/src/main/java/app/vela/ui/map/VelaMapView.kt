@@ -1326,21 +1326,21 @@ fun VelaMapView(
         if (puckOverlayOn.value) puckOverlayOn.value = false
         lastPuckScreen[0] = Float.NaN
         lastPuckScreen[1] = Float.NaN
-        if (puckOverlayHidLayer[0]) {
-            puckOverlayHidLayer[0] = false
-            puckOverlayOwnsArrow = false
-            lastMeLayerKey = null // applyData re-derives the symbol puck's visibility on its next pass
-            styleRef?.let { st ->
-                // The source was not fed while the overlay drew (see the ticker), so put the symbol
-                // where the arrow last was before showing it. Fall back to raw fix if drawn is null.
-                val fallbackPt = navPuck.drawn ?: navPuck.raw ?: myLocationHolder.value
-                val fallbackBrg = if (!navPuck.displayBearing.isNaN()) navPuck.displayBearing
-                    else (navPuck.rawBearing ?: myBearingHolder.value ?: 0f)
-                if (fallbackPt != null) {
-                    setMeSource(st, fallbackPt, fallbackBrg)
-                }
-                st.getLayer(ME_ARROW_LAYER)?.setProperties(PropertyFactory.visibility(Property.VISIBLE))
+        puckOverlayHidLayer[0] = false
+        puckOverlayOwnsArrow = false
+        lastMeLayerKey = null // applyData re-derives the symbol puck's visibility on its next pass
+        styleRef?.let { st ->
+            // The source was not fed while the overlay drew (see the ticker), so put the symbol
+            // where the arrow last was before showing it. Fall back to raw fix or route start if drawn is null.
+            val fallbackPt = navPuck.drawn ?: navPuck.raw ?: myLocationHolder.value
+                ?: (if (navMode) routePolyline.firstOrNull() else null)
+            val fallbackBrg = if (!navPuck.displayBearing.isNaN()) navPuck.displayBearing
+                else (navPuck.rawBearing ?: myBearingHolder.value
+                    ?: (if (routePolyline.size >= 2) bearingDeg(routePolyline[0], routePolyline[1]).toFloat() else 0f))
+            if (fallbackPt != null) {
+                setMeSource(st, fallbackPt, fallbackBrg)
             }
+            st.getLayer(ME_ARROW_LAYER)?.setProperties(PropertyFactory.visibility(Property.VISIBLE))
         }
     }
     var appliedStyleKey by remember { mutableStateOf<String?>(null) }
@@ -3853,8 +3853,9 @@ fun VelaMapView(
                         idleFrames = 0
                     }
                 }
-                val raw = navPuck.raw ?: myLocationHolder.value
+                val raw = navPuck.raw ?: myLocationHolder.value ?: (if (navMode) routePolyline.firstOrNull() else null)
                 val rawBrg = navPuck.rawBearing ?: myBearingHolder.value ?: compassHeading?.toFloat()
+                    ?: (if (routePolyline.size >= 2) bearingDeg(routePolyline[0], routePolyline[1]).toFloat() else null)
                 if (cam != null && raw != null) {
                     val live = cam.cameraPosition
                     val scr = cam.projection.toScreenLocation(MLLatLng(raw.lat, raw.lng))
@@ -3862,6 +3863,7 @@ fun VelaMapView(
                     val moved = kotlin.math.abs(scr.x - lastPuckScreen[0]) > 0.5f || kotlin.math.abs(scr.y - lastPuckScreen[1]) > 0.5f
                     showPuckOverlay(style, scr.x, scr.y, brg - live.bearing, live.tilt)
                     lastPuckScreen[0] = scr.x; lastPuckScreen[1] = scr.y
+                    puckScreenCb.value(scr.x, scr.y)
                     if (moved) idleFrames = 0 else idleFrames++
                 } else {
                     dropPuckOverlay()
@@ -5336,7 +5338,7 @@ fun VelaMapView(
                 }
             }
 
-            navMode && myLocation != null && navFollowing -> {
+            navMode && (myLocation != null || routePolyline.isNotEmpty()) && navFollowing -> {
                 // The per-frame follow-camera now runs in the motion ticker above (continuous
                 // glide — that's what fixes the "stiff" throttled-ease feel). Here we only handle
                 // the PRE-ENGAGE / off-route case (puck not snapped to the route yet): a throttled
@@ -5344,56 +5346,59 @@ fun VelaMapView(
                 // matched even when engaged stops a mid-nav reroute from falling through to the
                 // fit-route case and zooming the whole route out.
                 if (!navPuck.engaged) {
-                    val loc = displayLoc ?: myLocation
-                    val brg = lastNavBearing ?: displayBearing ?: 0f
-                    val moved = lastNavTarget?.let { it.distanceTo(loc) > 4.0 } ?: true
-                    val turned = lastNavBearing?.let { kotlin.math.abs(((brg - it + 540f) % 360f) - 180f) > 2f } ?: true
-                    if ((moved || turned) && !scaling[0] && !twoDown[0]) {
-                        lastNavTarget = loc
-                        lastNavBearing = brg
-                        val rawSp = (mySpeed ?: 0f).coerceIn(0f, 30f)
-                        navZoomSpeed[0] += (rawSp - navZoomSpeed[0]) * 0.3f
-                        val zoom = if (!navUserZoom[0].isNaN()) navUserZoom[0]
-                            else NavFraming.zoom(18.5 - (navZoomSpeed[0] / 30f) * (18.5 - 15.8), navPuck.framer.zoomOffset) // even closer default (user 2026-07-15, was 18.0-15.5); speed still zooms out
-                        val now = android.os.SystemClock.uptimeMillis()
-                        if (navStartCutMs[0] == 0L) {
-                            // Google's start: cut straight to the car at street zoom, flat, then
-                            // tilt in slowly. Flying from the overview down to the nav zoom loaded
-                            // and placed a fresh tile set at every zoom it passed through (4a: 6-10
-                            // fps for three seconds); a cut loads one viewport, and the slow tilt
-                            // lets the horizon's tiles arrive a few at a time.
-                            navStartCutMs[0] = now
-                            navStartTilting[0] = !navNorthUpOn
-                            navTiltEase[0] = 0.0
-                            cutReveal()
-                            map.moveCamera(
+                    val loc = displayLoc ?: myLocation ?: routePolyline.firstOrNull()
+                    if (loc != null) {
+                        val brg = lastNavBearing ?: displayBearing
+                            ?: (if (routePolyline.size >= 2) bearingDeg(routePolyline[0], routePolyline[1]).toFloat() else 0f)
+                        val moved = lastNavTarget?.let { it.distanceTo(loc) > 4.0 } ?: true
+                        val turned = lastNavBearing?.let { kotlin.math.abs(((brg - it + 540f) % 360f) - 180f) > 2f } ?: true
+                        if ((moved || turned) && !scaling[0] && !twoDown[0]) {
+                            lastNavTarget = loc
+                            lastNavBearing = brg
+                            val rawSp = (mySpeed ?: 0f).coerceIn(0f, 30f)
+                            navZoomSpeed[0] += (rawSp - navZoomSpeed[0]) * 0.3f
+                            val zoom = if (!navUserZoom[0].isNaN()) navUserZoom[0]
+                                else NavFraming.zoom(18.5 - (navZoomSpeed[0] / 30f) * (18.5 - 15.8), navPuck.framer.zoomOffset) // even closer default (user 2026-07-15, was 18.0-15.5); speed still zooms out
+                            val now = android.os.SystemClock.uptimeMillis()
+                            if (navStartCutMs[0] == 0L) {
+                                // Google's start: cut straight to the car at street zoom, flat, then
+                                // tilt in slowly. Flying from the overview down to the nav zoom loaded
+                                // and placed a fresh tile set at every zoom it passed through (4a: 6-10
+                                // fps for three seconds); a cut loads one viewport, and the slow tilt
+                                // lets the horizon's tiles arrive a few at a time.
+                                navStartCutMs[0] = now
+                                navStartTilting[0] = !navNorthUpOn
+                                navTiltEase[0] = 0.0
+                                cutReveal()
+                                map.moveCamera(
+                                    CameraUpdateFactory.newCameraPosition(
+                                        CameraPosition.Builder()
+                                            .target(MLLatLng(loc.lat, loc.lng))
+                                            .zoom(zoom)
+                                            .tilt(0.0)
+                                            .bearing(if (navNorthUpOn) 0.0 else brg.toDouble())
+                                            .padding(0.0, map.height * navPuck.framer.pad, 0.0, 0.0)
+                                            .build(),
+                                    ),
+                                )
+                            } else {
+                                preEngageAnimUntil[0] = now + 600 // the ticker's parked tilt waits for this flight
+                                map.animateCamera(
                                 CameraUpdateFactory.newCameraPosition(
                                     CameraPosition.Builder()
                                         .target(MLLatLng(loc.lat, loc.lng))
                                         .zoom(zoom)
-                                        .tilt(0.0)
+                                        // Still tilting in from the cut: the same ease the ticker runs.
+                                        .tilt(if (navNorthUpOn) 0.0 else if (navStartTilting[0])
+                                            55.0 * (1.0 - kotlin.math.exp(-(now - navStartCutMs[0]) / 1000.0 / NAV_START_TILT_TAU_S))
+                                            else 55.0)
                                         .bearing(if (navNorthUpOn) 0.0 else brg.toDouble())
                                         .padding(0.0, map.height * navPuck.framer.pad, 0.0, 0.0)
                                         .build(),
                                 ),
+                                550,
                             )
-                        } else {
-                            preEngageAnimUntil[0] = now + 600 // the ticker's parked tilt waits for this flight
-                            map.animateCamera(
-                            CameraUpdateFactory.newCameraPosition(
-                                CameraPosition.Builder()
-                                    .target(MLLatLng(loc.lat, loc.lng))
-                                    .zoom(zoom)
-                                    // Still tilting in from the cut: the same ease the ticker runs.
-                                    .tilt(if (navNorthUpOn) 0.0 else if (navStartTilting[0])
-                                        55.0 * (1.0 - kotlin.math.exp(-(now - navStartCutMs[0]) / 1000.0 / NAV_START_TILT_TAU_S))
-                                        else 55.0)
-                                    .bearing(if (navNorthUpOn) 0.0 else brg.toDouble())
-                                    .padding(0.0, map.height * navPuck.framer.pad, 0.0, 0.0)
-                                    .build(),
-                            ),
-                            550,
-                        )
+                            }
                         }
                     }
                 }
@@ -5590,8 +5595,9 @@ fun VelaMapView(
             if (a > 0f) drawRect(androidx.compose.ui.graphics.Color(land), alpha = a)
         },
     )
-    androidx.compose.runtime.CompositionLocalProvider(
-        androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Ltr,
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier.matchParentSize(),
+        contentAlignment = androidx.compose.ui.AbsoluteAlignment.TopLeft,
     ) {
         val puckMesh = if (puckOverlayOn.value) remember(app.vela.ui.PuckStyle.key()) {
             PuckModels.forShape(app.vela.ui.PuckStyle.shape.value, app.vela.ui.PuckStyle.carColor.value)
@@ -5600,6 +5606,7 @@ fun VelaMapView(
             val sizePx = (202 * app.vela.ui.PuckStyle.scale()).toInt()
             androidx.compose.foundation.Canvas(
                 Modifier
+                    .align(androidx.compose.ui.AbsoluteAlignment.TopLeft)
                     .graphicsLayer {
                         val px = puckOverlayX.floatValue
                         val py = puckOverlayY.floatValue
@@ -5625,6 +5632,7 @@ fun VelaMapView(
                 bitmap = puckImg,
                 contentDescription = null,
                 modifier = Modifier
+                    .align(androidx.compose.ui.AbsoluteAlignment.TopLeft)
                     .graphicsLayer {
                         val px = puckOverlayX.floatValue
                         val py = puckOverlayY.floatValue
@@ -10121,26 +10129,28 @@ private fun applyData(
 
     // The location source: in browse mode applyData owns it (set it from the fix here);
     // in NAV the per-frame motion-model ticker owns it (smooth glide), so don't fight it —
-    // except to CLEAR it when there's no fix.
-    if (!navMode || me == null) {
+    // except to CLEAR it when there's no fix or keep it fed when overlay is not drawing.
+    val effectiveMe = me ?: if (navMode) route.firstOrNull() else null
+    val effectiveBrg = bearing ?: if (navMode && route.size >= 2) bearingDeg(route[0], route[1]).toFloat() else 0f
+
+    if (!navMode || effectiveMe == null || !puckOverlayOwnsArrow) {
         // AUDIT FIX 3b (2026-07-15): value-gated - a recomposition that didn't move the dot
         // (a sheet drag, a settings flip) re-uploaded the point for nothing. When the browse
         // ticker owns the source it feeds the SAME eased values through here, so an unchanged
         // pair is genuinely a no-op; a nav→browse transition always differs and repaints.
-        val meBrg = bearing ?: 0f
-        if (me != lastAppliedMe || meBrg != lastAppliedMeBearing) {
-            val meFc = if (me != null) {
+        if (effectiveMe != lastAppliedMe || effectiveBrg != lastAppliedMeBearing) {
+            val meFc = if (effectiveMe != null) {
                 FeatureCollection.fromFeature(
-                    Feature.fromGeometry(Point.fromLngLat(me.lng, me.lat)).apply {
-                        addNumberProperty("bearing", meBrg)
+                    Feature.fromGeometry(Point.fromLngLat(effectiveMe.lng, effectiveMe.lat)).apply {
+                        addNumberProperty("bearing", effectiveBrg)
                     },
                 )
             } else {
                 FeatureCollection.fromFeatures(emptyList<Feature>())
             }
             style.getSourceAs<GeoJsonSource>(ME_SRC)?.setGeoJson(meFc)
-            lastAppliedMe = me
-            lastAppliedMeBearing = meBrg
+            lastAppliedMe = effectiveMe
+            lastAppliedMeBearing = effectiveBrg
         }
     }
 
@@ -10148,17 +10158,17 @@ private fun applyData(
     // hide the dot and swap the heading layer's icon to the arrow. BROWSE: the blue dot
     // (gray when the fix is stale) + a faint heading cone. The cone/puck both hide while
     // stale (old bearing).
-    val showPuck = navMode && me != null
+    val showPuck = navMode && effectiveMe != null
     // Key-gated (AUDIT FIX 3b): four JNI property sets per recomposition for values that only
     // change on a mode/staleness flip.
-    val arrowVis = if (navMode) (me != null && !puckOverlayOwnsArrow) else (me != null && bearing != null && !meStale)
+    val arrowVis = if (navMode) (effectiveMe != null && !puckOverlayOwnsArrow) else (effectiveMe != null && bearing != null && !meStale)
     val meLayerKey = (if (navMode) 1 else 0) or (if (meStale) 2 else 0) or
         (if (showPuck) 4 else 0) or (if (arrowVis) 8 else 0) or (if (puckOverlayOwnsArrow) 16 else 0)
     if (meLayerKey != lastMeLayerKey) {
         lastMeLayerKey = meLayerKey
         style.getLayer(ME_LAYER)?.setProperties(
             PropertyFactory.circleColor(if (meStale) "#9AA0A6" else "#4285F4"),
-            PropertyFactory.visibility(if (showPuck) Property.NONE else Property.VISIBLE),
+            PropertyFactory.visibility(if (showPuck) Property.NONE else (if (effectiveMe != null) Property.VISIBLE else Property.NONE)),
         )
         style.getLayer(ME_ARROW_LAYER)?.setProperties(
             PropertyFactory.iconImage(if (navMode) (if (meStale) NAV_PUCK_STALE_IMG else NAV_PUCK_IMG) else ME_ARROW_IMG),

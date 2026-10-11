@@ -537,6 +537,10 @@ internal class NavController(
     private fun launchNav(route: app.vela.core.model.Route) {
         val dest = host.destination ?: route.polyline.lastOrNull() ?: return
         host.startLocation() // make sure live fixes are flowing - they drive the nav loop
+        val startOrigin = route.polyline.firstOrNull()
+        if (_state.value.myLocation == null && startOrigin != null) {
+            _state.update { it.copy(myLocation = it.myLocation ?: startOrigin, center = it.center ?: startOrigin) }
+        }
         // Stops are stored in travel order (swapDirections reverses the list itself) → per-stop arrival
         // cues + reroute-through-remaining.
         val s = _state.value

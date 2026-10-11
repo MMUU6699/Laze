@@ -7489,7 +7489,14 @@ class MapViewModel @Inject constructor(
             route(_state.value.travelMode)
             return
         }
-        _state.update { it.copy(routeLifecycle = RouteLifecycleState.STARTING_NAVIGATION) }
+        val originSeed = me ?: locationProvider.lastKnown() ?: s.activeRoute?.polyline?.firstOrNull()
+        _state.update {
+            it.copy(
+                routeLifecycle = RouteLifecycleState.STARTING_NAVIGATION,
+                myLocation = it.myLocation ?: originSeed,
+                center = it.center ?: originSeed,
+            )
+        }
         if (!_state.value.voiceMuted && app.vela.core.i18n.NavStringsRegistry.current().locale.language.startsWith("ar")) {
             val health = voice.checkCurrentVoiceHealth("ar")
             if (!health.canSpeak && health.level != app.vela.core.voice.VoiceHealthLevel.INIT_FAILED) {
