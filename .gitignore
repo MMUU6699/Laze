@@ -3,6 +3,7 @@
 **/build/
 !gradle/wrapper/gradle-wrapper.jar
 !gradle/wrapper/gradle-wrapper.properties
+gradle/gradle-daemon-jvm.properties
 
 # IntelliJ / Android Studio
 *.iml

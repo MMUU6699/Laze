@@ -32,11 +32,11 @@ android {
 
         val supabaseUrl = (project.findProperty("supabaseUrl") as? String)
             ?: localProperties.getProperty("supabase.url")
-            ?: "https://dwubxdddfcfeanrppxvy.supabase.co"
+            ?: ""
 
         val supabaseAnonKey = (project.findProperty("supabaseAnonKey") as? String)
             ?: localProperties.getProperty("supabase.anon_key")
-            ?: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3dWJ4ZGRkZmNmZWFucnBweHZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE2Mjc1MDMsImV4cCI6MjEwNzIwMzUwM30.EtqWZXyh98FBTw5jdQkf5VC-1NlNAmPllLEw09721_c"
+            ?: ""
 
         val mapboxToken = (project.findProperty("mapboxToken") as? String)
             ?: localProperties.getProperty("mapbox.token")
