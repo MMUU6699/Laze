@@ -40,6 +40,7 @@ class MapboxRoutingProvider(
     private val httpClient: OkHttpClient,
     private val token: String = BuildConfig.MAPBOX_TOKEN,
     private val baseUrl: String = "https://api.mapbox.com/directions/v5/mapbox",
+    private val remoteConfig: app.vela.core.backend.RemoteConfigRepository? = null,
 ) : RoutingProvider {
 
     override val name: String = "Mapbox"
@@ -47,12 +48,23 @@ class MapboxRoutingProvider(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    /**
+     * Resolves the effective Mapbox access token: prefers the cloud-cached
+     * value from [remoteConfig], falls back to the compile-time [token].
+     */
+    private fun resolveToken(): String {
+        val cloud = remoteConfig?.getCachedString("mapbox_token")
+        if (!cloud.isNullOrBlank()) return cloud
+        return token
+    }
+
     override fun prewarm() {
-        if (token.isBlank()) return
+        val t = resolveToken()
+        if (t.isBlank()) return
         httpClient.dispatcher.executorService.execute {
             runCatching {
                 val req = Request.Builder()
-                    .url("https://api.mapbox.com/directions/v5/mapbox/driving-traffic/0,0;0,0?access_token=$token")
+                    .url("https://api.mapbox.com/directions/v5/mapbox/driving-traffic/0,0;0,0?access_token=$t")
                     .head()
                     .header("User-Agent", "Laze/1.0 (Android; Arabic Navigation)")
                     .build()
@@ -72,7 +84,8 @@ class MapboxRoutingProvider(
         departBearingDeg: Double?,
         timeoutMs: Long?,
     ): List<Route> = withContext(Dispatchers.IO) {
-        if (token.isBlank()) {
+        val activeToken = resolveToken()
+        if (activeToken.isBlank()) {
             return@withContext emptyList()
         }
 
@@ -113,7 +126,7 @@ class MapboxRoutingProvider(
         val annotationsParam = if (mode == TravelMode.DRIVE) "&annotations=congestion,distance" else ""
 
         val url = "$baseUrl/$profile/$coordsStr" +
-            "?access_token=$token" +
+            "?access_token=$activeToken" +
             "&geometries=polyline6" +
             "&overview=full" +
             "&steps=true" +

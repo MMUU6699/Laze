@@ -163,7 +163,7 @@ class GoogleMapsDataSource @Inject constructor(
 
     private val activeRoutingProvider: app.vela.core.routing.RoutingProvider = routingProvider ?: app.vela.core.routing.CompositeRoutingProvider(
         listOfNotNull(
-            if (app.vela.core.BuildConfig.MAPBOX_TOKEN.isNotBlank()) app.vela.core.routing.MapboxRoutingProvider(http) else null,
+            app.vela.core.routing.MapboxRoutingProvider(http),
             if (app.vela.core.BuildConfig.IRAQ_OSRM_URL.isNotBlank()) app.vela.core.routing.OsrmRoutingProvider(http, baseUrl = app.vela.core.BuildConfig.IRAQ_OSRM_URL, name = "OSRM-Iraq") else null,
             app.vela.core.routing.OsrmRoutingProvider(http, baseUrl = "https://routing.openstreetmap.de", name = "OSRM-Community")
         )

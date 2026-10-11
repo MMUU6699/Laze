@@ -314,7 +314,7 @@ fun ManeuverBanner(
                         // One line that shrinks to fit beside the shield: wrapped at large text it
                         // took two headline lines. Reset only when its length changes, not on
                         // every distance tick.
-                        val distText = if (rerouting) stringResource(R.string.nav_rerouting) else formatDistance(distanceMeters)
+                        val distText = if (rerouting) stringResource(R.string.nav_rerouting) else "\u2068${formatDistance(distanceMeters)}\u2069"
                         val distStyle = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium
                         FitText(
                             distText,
@@ -350,7 +350,8 @@ fun ManeuverBanner(
                     // (user-agreed design 2026-07-16).
                     if (!rerouting) {
                         val full = text.ifEmpty { stringResource(R.string.nav_maneuver_continue) }
-                        val headline = app.vela.core.i18n.NavStringsRegistry.current().spokenSign(full)
+                        val headlineRaw = app.vela.core.i18n.NavStringsRegistry.current().spokenSign(full)
+                        val headline = app.vela.core.util.BidiHelper.isolateBidiRuns(headlineRaw)
                         Text(
                             headline,
                             style = MaterialTheme.typography.titleMedium,
@@ -358,8 +359,9 @@ fun ManeuverBanner(
                             maxLines = BANNER_HEADLINE_LINES,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        if (headline.length < full.length) {
-                            val rest = full.substring(headline.length).trim(':', ' ')
+                        if (headlineRaw.length < full.length) {
+                            val restRaw = full.substring(headlineRaw.length).trim(':', ' ')
+                            val rest = app.vela.core.util.BidiHelper.isolateBidiRuns(restRaw)
                             if (rest.isNotBlank()) Text(
                                 rest,
                                 style = MaterialTheme.typography.bodyMedium,

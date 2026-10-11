@@ -143,6 +143,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -1522,6 +1523,7 @@ fun MapScreen(
                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
                 shadowElevation = 4.dp,
                 modifier = if (puckScreen.have.value) Modifier
+                    .windowInsetsPadding(WindowInsets.systemBars)
                     .widthIn(max = 320.dp)
                     .layout { measurable, constraints ->
                         val placeable = measurable.measure(constraints)
@@ -1539,6 +1541,7 @@ fun MapScreen(
                     }
                 else Modifier
                     .align(Alignment.BottomCenter)
+                    .windowInsetsPadding(WindowInsets.systemBars)
                     .navigationBarsPadding()
                     .padding(bottom = navBarClearance + 68.dp, start = 16.dp, end = 16.dp)
                     .widthIn(max = 340.dp),

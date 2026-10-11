@@ -22,6 +22,7 @@ class VelaApp : Application(), coil.ImageLoaderFactory {
     @Inject lateinit var diag: DiagLog
     @Inject lateinit var http: okhttp3.OkHttpClient
     @Inject lateinit var locationProvider: app.vela.core.location.LocationProvider
+    @Inject lateinit var remoteConfig: app.vela.core.backend.RemoteConfigRepository
 
     /** Coil with a HARD memory-cache cap. The default budget is ~25% of the app's heap CLASS,
      *  and largeHeap makes that class huge - on a 512 MB large heap Coil happily retains up to
@@ -169,6 +170,9 @@ class VelaApp : Application(), coil.ImageLoaderFactory {
         // instantly, route counts are reliable), then refresh from the hosted manifest so the data updates
         // without an app release (weekly CI cron re-hosts a newer version; a bump swaps it in on next launch).
         CoroutineScope(Dispatchers.IO).launch {
+            // Pre-fetch cloud config (Mapbox token, etc.) from Supabase so that
+            // the first routing/places call already has the token cached locally.
+            runCatching { remoteConfig.refreshAll() }
             // The catalog regions' real boundaries (issue #599): until this lands, region picks
             // fall back to their boxes, which is what they always were.
             app.vela.offline.RegionPolys.ensureLoaded(this@VelaApp)

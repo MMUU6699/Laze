@@ -118,12 +118,35 @@ fun SearchBar(
     // tone as the map, so the bar dissolved into it (issue #351). Dark keeps the flat tone: a
     // shadow reads as a smear on a dark map.
     val dark = app.vela.ui.theme.isAppInDarkTheme()
+    // ── Liquid Glass surface ────────────────────────────────────────────
+    // Frosted translucent background, soft rounded pill, glass-highlight
+    // border, and a gentle diffused shadow — modern iOS/visionOS style.
+    val glassBackground = if (dark)
+        androidx.compose.ui.graphics.Color(0xFF1C2026).copy(alpha = 0.82f)
+    else
+        androidx.compose.ui.graphics.Color.White.copy(alpha = 0.78f)
+
+    val glassBorder = if (dark)
+        androidx.compose.ui.graphics.Color.White.copy(alpha = 0.12f)
+    else
+        androidx.compose.ui.graphics.Color.White.copy(alpha = 0.50f)
+
+    val glassShadowElevation = if (dark) 0.dp else 8.dp
+
     Card(
         modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(containerColor = if (dark) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerLowest),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (dark) 0.dp else 6.dp),
-        border = if (dark) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        colors = CardDefaults.cardColors(containerColor = glassBackground),
+        elevation = CardDefaults.cardElevation(defaultElevation = glassShadowElevation),
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (dark) 1.dp else 1.2.dp,
+            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                colors = listOf(
+                    glassBorder,
+                    glassBorder.copy(alpha = glassBorder.alpha * 0.4f),
+                ),
+            ),
+        ),
     ) {
         Row(
             Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 6.dp),

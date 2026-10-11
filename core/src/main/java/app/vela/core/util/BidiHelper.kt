@@ -42,4 +42,20 @@ object BidiHelper {
             "${mr.groupValues[1]} إلى ${mr.groupValues[2]}"
         }
     }
+
+    /**
+     * Scans any text (such as navigation instructions, road names, and headlines)
+     * and wraps any numbers, hyphenated codes (e.g. "118-214", "M-1", "I-95"),
+     * or mixed alphanumeric identifiers with Unicode First Strong Isolate (\u2068...\u2069)
+     * so that the Unicode BiDi algorithm renders numbers and codes in their
+     * correct natural order in RTL paragraphs.
+     */
+    fun isolateBidiRuns(text: String): String {
+        if (text.isBlank()) return text
+        // Isolate sequences of alphanumeric parts joined by hyphens, slashes, or dashes
+        val regex = Regex("""(?<![\u2068\u2066])\b([A-Za-z0-9]+(?:[-/][A-Za-z0-9]+)+)\b(?![\u2069])""")
+        return regex.replace(text) { mr ->
+            "\u2068${mr.value}\u2069"
+        }
+    }
 }

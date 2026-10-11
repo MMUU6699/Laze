@@ -102,13 +102,22 @@ object CoreModule {
 
     @Provides
     @Singleton
+    fun remoteConfigRepository(
+        @ApplicationContext context: Context,
+    ): app.vela.core.backend.RemoteConfigRepository =
+        app.vela.core.backend.RemoteConfigRepository(context)
+
+    @Provides
+    @Singleton
     fun routingProvider(
         okHttpClient: OkHttpClient,
+        remoteConfig: app.vela.core.backend.RemoteConfigRepository,
     ): app.vela.core.routing.RoutingProvider {
         val providers = mutableListOf<app.vela.core.routing.RoutingProvider>()
-        if (app.vela.core.BuildConfig.MAPBOX_TOKEN.isNotBlank()) {
-            providers.add(app.vela.core.routing.MapboxRoutingProvider(okHttpClient))
-        }
+        // Always add Mapbox – the provider fetches its token dynamically from
+        // Supabase cloud config (RemoteConfigRepository), falling back to the
+        // compile-time BuildConfig.MAPBOX_TOKEN when the cloud is unreachable.
+        providers.add(app.vela.core.routing.MapboxRoutingProvider(okHttpClient, remoteConfig = remoteConfig))
         if (app.vela.core.BuildConfig.IRAQ_OSRM_URL.isNotBlank()) {
             providers.add(app.vela.core.routing.OsrmRoutingProvider(okHttpClient, baseUrl = app.vela.core.BuildConfig.IRAQ_OSRM_URL, name = "OSRM-Iraq"))
         }
@@ -134,11 +143,20 @@ object CoreModule {
     @Singleton
     fun placesProvider(
         okHttpClient: OkHttpClient,
+        remoteConfig: app.vela.core.backend.RemoteConfigRepository,
     ): app.vela.core.places.PlacesProvider {
         val providers = mutableListOf<app.vela.core.places.PlacesProvider>()
-        if (app.vela.core.BuildConfig.MAPBOX_TOKEN.isNotBlank()) {
-            providers.add(app.vela.core.places.MapboxPlacesProvider(accessTokenProvider = { app.vela.core.BuildConfig.MAPBOX_TOKEN }, client = okHttpClient))
-        }
+        // Mapbox places provider: token resolved dynamically from Supabase
+        // cloud config with BuildConfig fallback (same pattern as routing).
+        providers.add(app.vela.core.places.MapboxPlacesProvider(
+            accessTokenProvider = {
+                // Synchronous accessor: RemoteConfigRepository pre-caches at
+                // startup; the SharedPreferences backing store is synchronous.
+                val cached = remoteConfig.getCachedString("mapbox_token")
+                cached ?: app.vela.core.BuildConfig.MAPBOX_TOKEN
+            },
+            client = okHttpClient,
+        ))
         providers.add(app.vela.core.places.OverpassPlacesProvider(client = okHttpClient))
         return app.vela.core.places.CompositePlacesProvider(providers)
     }

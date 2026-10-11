@@ -18,9 +18,10 @@ object Units {
         // attachBaseContext) and sets the JVM default to the in-app language, which for the
         // plain "English" choice has no country, so a US phone silently flipped to kilometers
         // the moment its owner touched the language picker (seen on the P4a, 2026-09-12).
+        val isAr = AppLocale.effective().language == "ar"
         val country = android.content.res.Resources.getSystem().configuration.locales.get(0)?.country
             ?: Locale.getDefault().country
-        val default = country in setOf("US", "GB", "LR", "MM")
+        val default = if (isAr) false else (country in setOf("US", "GB", "LR", "MM"))
         imperial.value = prefs(context).getBoolean(KEY, default)
     }
 
@@ -33,14 +34,19 @@ object Units {
     private const val KEY = "imperial"
 }
 
-fun formatDistance(meters: Double): String =
-    if (Units.imperial.value) {
+fun formatDistance(meters: Double): String {
+    val isAr = AppLocale.effective().language == "ar"
+    return if (Units.imperial.value) {
         val feet = meters * 3.28084
-        // Google-style feet: 50 ft steps at/above 100 ft, 10 ft steps below (min 10, never "0 ft").
-        if (feet < 1000) "${if (feet < 100) maxOf(10, (feet / 10).roundToInt() * 10) else (feet / 50).roundToInt() * 50} ft"
-        else String.format(Locale.US, "%.1f mi", meters / 1609.344)
+        if (feet < 1000) {
+            val f = if (feet < 100) maxOf(10, (feet / 10).roundToInt() * 10) else (feet / 50).roundToInt() * 50
+            if (isAr) "$f قدم" else "$f ft"
+        } else {
+            val mi = meters / 1609.344
+            if (isAr) String.format(AppLocale.effective(), "%.1f ميل", mi)
+            else String.format(Locale.US, "%.1f mi", mi)
+        }
     } else {
-        val isAr = AppLocale.effective().language == "ar"
         if (meters < 1000) {
             val rounded = meters.roundToInt()
             if (isAr) "$rounded م" else "$rounded m"
@@ -50,6 +56,7 @@ fun formatDistance(meters: Double): String =
             else String.format(Locale.US, "%.1f km", km)
         }
     }
+}
 
 /** An area in the user's units: sq ft, acres, sq mi, or m², hectares, km². */
 fun formatArea(m2: Double): String =
@@ -117,31 +124,36 @@ fun formatDuration(seconds: Double): String {
  * never get scrambled into "م km · 3:27 361.0" in RTL layouts.
  */
 fun formatNavSummary(distanceText: String, arrivalClockText: String, statusText: String? = null): String {
+    val isAr = AppLocale.effective().language == "ar"
     val d = "\u2068$distanceText\u2069"
     val a = "\u2068$arrivalClockText\u2069"
-    val base = "$d  ·  $a"
+    // In Arabic RTL, putting ETA first then middle dot then distance matches natural reading order
+    val base = if (isAr) "$a  ·  $d" else "$d  ·  $a"
     return if (!statusText.isNullOrBlank()) "$base  ·  \u2068$statusText\u2069" else base
 }
 
 /** Current speed as a (value, unit) pair for the speedometer, e.g. (65, "mph") —
  *  imperial vs metric follows the [Units] preference. */
-fun formatSpeed(metersPerSecond: Float): Pair<Int, String> =
-    if (Units.imperial.value) {
-        (metersPerSecond * 2.236936).roundToInt() to "mph"
+fun formatSpeed(metersPerSecond: Float): Pair<Int, String> {
+    val isAr = AppLocale.effective().language == "ar"
+    return if (Units.imperial.value) {
+        (metersPerSecond * 2.236936).roundToInt() to (if (isAr) "ميل/س" else "mph")
     } else {
-        val isAr = AppLocale.effective().language == "ar"
         (metersPerSecond * 3.6).roundToInt() to (if (isAr) "كم/س" else "km/h")
     }
+}
 
 /** Posted speed limit (given in km/h from OSM via the obf engine or the overlay) as a (value, unit) pair in the display
  *  units. An mph-tagged US road round-trips exactly: 35 mph, which OSM stores as km/h, quantizes to
  *  56.0 km/h → ×0.621371 = 34.8 → rounds back to 35 mph (all 25–85 mph US limits round-trip). */
-fun formatSpeedLimit(kmh: Double): Pair<Int, String> =
-    if (Units.imperial.value) (kmh * 0.621371).roundToInt() to "mph"
-    else {
-        val isAr = AppLocale.effective().language == "ar"
+fun formatSpeedLimit(kmh: Double): Pair<Int, String> {
+    val isAr = AppLocale.effective().language == "ar"
+    return if (Units.imperial.value) {
+        (kmh * 0.621371).roundToInt() to (if (isAr) "ميل/س" else "mph")
+    } else {
         kmh.roundToInt() to (if (isAr) "كم/س" else "km/h")
     }
+}
 
 /** The device's 12/24-hour clock SETTING (Settings > System > Date & time), which is separate
  *  from the locale: a US-English phone set to 24-hour shows "19:42" everywhere else and used to

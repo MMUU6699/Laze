@@ -1332,8 +1332,13 @@ fun VelaMapView(
             lastMeLayerKey = null // applyData re-derives the symbol puck's visibility on its next pass
             styleRef?.let { st ->
                 // The source was not fed while the overlay drew (see the ticker), so put the symbol
-                // where the arrow last was before showing it.
-                navPuck.drawn?.let { setMeSource(st, it, navPuck.displayBearing) }
+                // where the arrow last was before showing it. Fall back to raw fix if drawn is null.
+                val fallbackPt = navPuck.drawn ?: navPuck.raw ?: myLocationHolder.value
+                val fallbackBrg = if (!navPuck.displayBearing.isNaN()) navPuck.displayBearing
+                    else (navPuck.rawBearing ?: myBearingHolder.value ?: 0f)
+                if (fallbackPt != null) {
+                    setMeSource(st, fallbackPt, fallbackBrg)
+                }
                 st.getLayer(ME_ARROW_LAYER)?.setProperties(PropertyFactory.visibility(Property.VISIBLE))
             }
         }
@@ -5585,44 +5590,57 @@ fun VelaMapView(
             if (a > 0f) drawRect(androidx.compose.ui.graphics.Color(land), alpha = a)
         },
     )
-    val puckMesh = if (puckOverlayOn.value) remember(app.vela.ui.PuckStyle.key()) {
-        PuckModels.forShape(app.vela.ui.PuckStyle.shape.value, app.vela.ui.PuckStyle.carColor.value)
-    } else null
-    if (puckOverlayOn.value && puckMesh != null) {
-        // The car, UFO, ship and duck are 3D models drawn from the camera's own tilt and the
-        // heading each frame (both read in the draw phase, so no recomposition per frame).
-        val sizePx = (202 * app.vela.ui.PuckStyle.scale()).toInt()
-        androidx.compose.foundation.Canvas(
-            Modifier
-                .graphicsLayer {
-                    translationX = puckOverlayX.floatValue - sizePx / 2f
-                    translationY = puckOverlayY.floatValue - sizePx / 2f
+    androidx.compose.runtime.CompositionLocalProvider(
+        androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Ltr,
+    ) {
+        val puckMesh = if (puckOverlayOn.value) remember(app.vela.ui.PuckStyle.key()) {
+            PuckModels.forShape(app.vela.ui.PuckStyle.shape.value, app.vela.ui.PuckStyle.carColor.value)
+        } else null
+        if (puckOverlayOn.value && puckMesh != null) {
+            val sizePx = (202 * app.vela.ui.PuckStyle.scale()).toInt()
+            androidx.compose.foundation.Canvas(
+                Modifier
+                    .graphicsLayer {
+                        val px = puckOverlayX.floatValue
+                        val py = puckOverlayY.floatValue
+                        if (!px.isNaN() && !py.isNaN()) {
+                            translationX = px - sizePx / 2f
+                            translationY = py - sizePx / 2f
+                            alpha = 1f
+                        } else {
+                            alpha = 0f
+                        }
+                    }
+                    .size(with(density) { sizePx.toDp() }),
+            ) {
+                drawIntoCanvas { c ->
+                    puckMesh.draw(c.nativeCanvas, size.width / 2f, size.height / 2f, size.width, puckOverlayRot.floatValue, puckOverlayTilt.floatValue)
                 }
-                .size(with(density) { sizePx.toDp() }),
-        ) {
-            drawIntoCanvas { c ->
-                puckMesh.draw(c.nativeCanvas, size.width / 2f, size.height / 2f, size.width, puckOverlayRot.floatValue, puckOverlayTilt.floatValue)
             }
+        } else if (puckOverlayOn.value) {
+            val puckKey = "${app.vela.ui.PuckStyle.key()}|stale=$locationStale"
+            val puckImg = remember(puckKey) { navPuckBitmap(isStale = locationStale).asImageBitmap() }
+            val sizePx = puckImg.width
+            androidx.compose.foundation.Image(
+                bitmap = puckImg,
+                contentDescription = null,
+                modifier = Modifier
+                    .graphicsLayer {
+                        val px = puckOverlayX.floatValue
+                        val py = puckOverlayY.floatValue
+                        if (!px.isNaN() && !py.isNaN()) {
+                            translationX = px - sizePx / 2f
+                            translationY = py - sizePx / 2f
+                            scaleY = puckOverlaySquash.floatValue
+                            alpha = 1f
+                        } else {
+                            alpha = 0f
+                        }
+                    }
+                    .graphicsLayer { rotationZ = puckOverlayRot.floatValue }
+                    .size(with(density) { sizePx.toDp() }),
+            )
         }
-    } else if (puckOverlayOn.value) {
-        val puckKey = "${app.vela.ui.PuckStyle.key()}|stale=$locationStale"
-        val puckImg = remember(puckKey) { navPuckBitmap(isStale = locationStale).asImageBitmap() }
-        val sizePx = puckImg.width
-        androidx.compose.foundation.Image(
-            bitmap = puckImg,
-            contentDescription = null,
-            modifier = Modifier
-                // Outer layer: place the center at the projected point and squash by the tilt
-                // (in SCREEN space, after the rotation below - hence two layers).
-                .graphicsLayer {
-                    translationX = puckOverlayX.floatValue - sizePx / 2f
-                    translationY = puckOverlayY.floatValue - sizePx / 2f
-                    scaleY = puckOverlaySquash.floatValue
-                }
-                // Inner layer: the heading, relative to the camera (the map rotates under it).
-                .graphicsLayer { rotationZ = puckOverlayRot.floatValue }
-                .size(with(density) { sizePx.toDp() }),
-        )
     }
     }
 }
