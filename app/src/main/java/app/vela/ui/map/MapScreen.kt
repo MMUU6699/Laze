@@ -1514,25 +1514,20 @@ fun MapScreen(
         // (tunnel, garage, Location toggled off); a confident-looking frozen arrow with no hint
         // it's stale was the audit's "GPS loss is completely invisible" finding. The dot/puck
         // already grays via the same flag.
-        if (state.navigating && (state.myLocationStale || state.navStarved)) {
+        if (state.navigating && (state.myLocationStale || state.navStarved || state.myLocation == null)) {
+            val context = LocalContext.current
             Surface(
-                shape = CircleShape,
+                shape = RoundedCornerShape(20.dp),
                 color = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
                 shadowElevation = 4.dp,
-                // Pinned ABOVE the arrow (user 2026-09-18). The dot is the thing that has gone
-                // gray, so the message belongs on it rather than in a band at the bottom of the
-                // screen, where the mute pop-out and the speed widget were already sitting. The
-                // road-name pill takes the space under the arrow, so this one goes over it.
-                // Bottom center stays the fallback for the frames before a puck position exists
-                // (a detached camera, the first fix of a drive).
                 modifier = if (puckScreen.have.value) Modifier
-                    .widthIn(max = 260.dp)
+                    .widthIn(max = 320.dp)
                     .layout { measurable, constraints ->
                         val placeable = measurable.measure(constraints)
                         layout(placeable.width, placeable.height) {
                             val at = puckScreen.at.value ?: Offset(constraints.maxWidth / 2f, 0f)
-                            val margin = 8.dp.roundToPx()
+                            val margin = 16.dp.roundToPx()
                             val maxX = (constraints.maxWidth - placeable.width - margin)
                                 .coerceAtLeast(margin)
                             placeable.place(
@@ -1545,15 +1540,49 @@ fun MapScreen(
                 else Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = navBarClearance + 68.dp, start = 90.dp, end = 90.dp),
+                    .padding(bottom = navBarClearance + 68.dp, start = 16.dp, end = 16.dp)
+                    .widthIn(max = 340.dp),
             ) {
-                Text(
-                    stringResource(R.string.nav_gps_lost),
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                )
+                ) {
+                    Icon(
+                        Sym.MyLocation,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Text(
+                        stringResource(R.string.nav_gps_lost),
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 2,
+                        softWrap = true,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (state.myLocation == null) {
+                        TextButton(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                                    )
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.mapscreen_location_tip_settings),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -4324,7 +4353,7 @@ private fun BoxScope.PipNavOverlay(state: MapUiState, pipUi: Boolean) {
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     )
                     Text(
-                        formatDistance(state.nav.distanceToNextManeuver) + " · " + app.vela.ui.formatArrivalClock(secs),
+                        app.vela.ui.formatNavSummary(formatDistance(state.nav.distanceToNextManeuver), app.vela.ui.formatArrivalClock(secs)),
                         style = MaterialTheme.typography.bodySmall,
                         color = LocalContentColor.current.copy(alpha = 0.72f),
                         maxLines = 1,

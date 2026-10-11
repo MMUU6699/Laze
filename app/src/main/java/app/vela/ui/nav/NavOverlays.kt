@@ -1184,13 +1184,15 @@ fun NavBarTop(
                 var pausedTick by remember { mutableStateOf(0) }
                 LaunchedEffect(paused) { while (paused) { kotlinx.coroutines.delay(30_000); pausedTick++ } }
                 FitText(
-                    formatDistance(shownMeters) +
-                        " · " + formatArrivalClock(shownSeconds).also { pausedTick } +
+                    app.vela.ui.formatNavSummary(
+                        formatDistance(shownMeters),
+                        formatArrivalClock(shownSeconds).also { pausedTick },
                         when {
-                            paused -> " · " + stringResource(R.string.nav_paused)
-                            offRoute -> " · " + stringResource(R.string.nav_rerouting)
-                            else -> ""
-                        },
+                            paused -> stringResource(R.string.nav_paused)
+                            offRoute -> stringResource(R.string.nav_rerouting)
+                            else -> null
+                        }
+                    ),
                     // A size up and nearly white: this line is read at a glance too.
                     style = MaterialTheme.typography.bodyLarge,
                     color = if (paused) MaterialTheme.colorScheme.primary else if (look.onDark) androidx.compose.ui.graphics.Color(0xFFDADCE0) else barDim,

@@ -84,10 +84,15 @@ fun formatDuration(seconds: Double): String {
     val totalMin = (seconds / 60.0).roundToInt()
     val h = totalMin / 60
     val m = totalMin % 60
-    // English keeps its own short form ("6 h 16 min"). Every other language takes the platform's
-    // units, so Japanese reads "6 時間 16 分" beside Google's transit times instead of "6 h 16 min"
-    // (issue #674). Any failure falls back to the English form.
     val locale = AppLocale.effective()
+    if (locale.language == "ar") {
+        return when {
+            totalMin < 1 -> "أقل من دقيقة"
+            h == 0 -> "$m د"
+            m == 0 -> "$h س"
+            else -> "$h س و $m د"
+        }
+    }
     if (locale.language != "en") {
         runCatching {
             val f = android.icu.text.MeasureFormat.getInstance(locale, android.icu.text.MeasureFormat.FormatWidth.SHORT)
@@ -104,6 +109,18 @@ fun formatDuration(seconds: Double): String {
     if (totalMin < 1) return "<1 min"
     if (totalMin < 60) return "$totalMin min"
     return if (m == 0) "$h h" else "$h h $m min"
+}
+
+/**
+ * Formats bottom nav summary text (distance, ETA arrival, optional status)
+ * with Unicode Directional Isolates so that numbers, units, and the middle dot
+ * never get scrambled into "م km · 3:27 361.0" in RTL layouts.
+ */
+fun formatNavSummary(distanceText: String, arrivalClockText: String, statusText: String? = null): String {
+    val d = "\u2068$distanceText\u2069"
+    val a = "\u2068$arrivalClockText\u2069"
+    val base = "$d  ·  $a"
+    return if (!statusText.isNullOrBlank()) "$base  ·  \u2068$statusText\u2069" else base
 }
 
 /** Current speed as a (value, unit) pair for the speedometer, e.g. (65, "mph") —
@@ -158,8 +175,9 @@ object Clock24 {
  *  following the device's 12/24-hour setting, the way Google shows ETA during navigation. */
 fun formatArrivalClock(remainingSeconds: Double): String {
     val arrival = (DemoClock.now()?.toLocalTime() ?: java.time.LocalTime.now()).plusSeconds(remainingSeconds.toLong())
-    val fmt = if (Clock24.on.value) java.time.format.DateTimeFormatter.ofPattern("HH:mm")
-        else java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT)
+    val locale = AppLocale.effective()
+    val fmt = if (Clock24.on.value) java.time.format.DateTimeFormatter.ofPattern("HH:mm", locale)
+        else java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).withLocale(locale)
     return arrival.format(fmt)
 }
 

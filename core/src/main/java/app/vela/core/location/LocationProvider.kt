@@ -156,6 +156,15 @@ class LocationProvider @Inject constructor(
                 override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
             }
             val active = PROVIDERS.filter { mgr.allProviders.contains(it) }
+            // Accelerate first fix: emit last-known position immediately as coarse seed while providers lock
+            runCatching {
+                val initial = active
+                    .mapNotNull { runCatching { mgr.getLastKnownLocation(it) }.getOrNull() }
+                    .maxByOrNull { it.time }
+                if (initial != null) {
+                    trySend(initial)
+                }
+            }
             diag.record(
                 "location",
                 "providers: " + PROVIDERS.joinToString(" ") { p ->
@@ -244,8 +253,12 @@ class LocationProvider @Inject constructor(
         runCatching { lm?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true }.getOrDefault(false)
 
     private companion object {
-        // GPS first (accurate), NETWORK second (fast coarse seed).
-        val PROVIDERS = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        // FUSED on API 31+ (fast AOSP hardware/network fusion), GPS (accurate), NETWORK (fast coarse seed).
+        val PROVIDERS: List<String> = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            listOf(LocationManager.FUSED_PROVIDER, LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        } else {
+            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        }
         val PERMISSIONS = listOf(
             android.Manifest.permission.ACCESS_FINE_LOCATION,
             android.Manifest.permission.ACCESS_COARSE_LOCATION,

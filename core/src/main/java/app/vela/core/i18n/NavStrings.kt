@@ -2279,8 +2279,10 @@ object ArNavStrings : NavStrings {
     }
 
     override fun phrase(type: String, mod: String?, road: String?, dest: String?, exitNo: String?, rbExit: Int?): String {
-        val r = road?.trim()?.takeIf { it.isNotBlank() }
-        val d = dest?.trim()?.takeIf { it.isNotBlank() }
+        val cleanRoad = road?.trim()?.takeIf { it.isNotBlank() }
+        val r = cleanRoad?.let { app.vela.core.util.BidiHelper.wrapRoadName(it) }
+        val cleanDest = dest?.trim()?.takeIf { it.isNotBlank() }
+        val d = cleanDest?.let { app.vela.core.util.BidiHelper.wrapRoadName(it) }
         val m = modWord(mod)
         val onto = if (r != null) " نحو $r" else ""
         val onRoad = if (r != null) " على $r" else ""
@@ -2408,7 +2410,7 @@ object ArNavStrings : NavStrings {
         "تنبيه على الطريق: ${reportType.titleAr}"
 
     override fun expandForSpeech(text: String): String {
-        var t = text
+        var t = app.vela.core.util.BidiHelper.formatForSpeech(text)
         // Expand common Arabic street/road abbreviations
         t = t.replace(Regex("""(^|\s)ش\.\s*"""), "$1شارع ")
         t = t.replace(Regex("""(^|\s)ط\.\s*"""), "$1طريق ")

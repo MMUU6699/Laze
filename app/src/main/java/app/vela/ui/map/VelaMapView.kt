@@ -361,6 +361,7 @@ private const val ME_LAYER = "vela-me"
 private const val ME_ARROW_LAYER = "vela-me-arrow"
 private const val ME_ARROW_IMG = "vela-arrow"
 private const val NAV_PUCK_IMG = "vela-nav-puck"
+private const val NAV_PUCK_STALE_IMG = "vela-nav-puck-stale"
 private const val PREVIEW_SRC = "vela-preview-src"
 private const val PREVIEW_LAYER = "vela-preview"
 /** Camera-bearing damping (issue #251). Heavy while the camera is essentially tracking a straight
@@ -3846,18 +3847,19 @@ fun VelaMapView(
                         idleFrames = 0
                     }
                 }
-                val raw = navPuck.raw
+                val raw = navPuck.raw ?: myLocationHolder.value
+                val rawBrg = navPuck.rawBearing ?: myBearingHolder.value ?: compassHeading?.toFloat()
                 if (cam != null && raw != null) {
                     val live = cam.cameraPosition
                     val scr = cam.projection.toScreenLocation(MLLatLng(raw.lat, raw.lng))
-                    val brg = (navPuck.rawBearing?.toDouble() ?: live.bearing)
+                    val brg = (rawBrg?.toDouble() ?: live.bearing)
                     val moved = kotlin.math.abs(scr.x - lastPuckScreen[0]) > 0.5f || kotlin.math.abs(scr.y - lastPuckScreen[1]) > 0.5f
                     showPuckOverlay(style, scr.x, scr.y, brg - live.bearing, live.tilt)
                     lastPuckScreen[0] = scr.x; lastPuckScreen[1] = scr.y
                     if (moved) idleFrames = 0 else idleFrames++
                 } else {
                     dropPuckOverlay()
-                    val moved = raw?.let { writeMe(style, it, navPuck.rawBearing ?: 0f) } == true
+                    val moved = raw?.let { writeMe(style, it, rawBrg ?: 0f) } == true
                     if (moved) idleFrames = 0 else idleFrames++
                 }
             }
@@ -4937,8 +4939,9 @@ fun VelaMapView(
         // This is the replay fix: recorded traces often carry no per-fix bearing (no doppler at low
         // speed / older devices), so `myBearing` is null and, with no snap, displayBearing went null —
         // which hid the arrow and left only the dot. The puck always has a route bearing when engaged.
-        val displayBearing = snap?.second ?: (if (!navMode) compassHeading else null) ?: myBearing
+        val displayBearing = snap?.second ?: compassHeading ?: myBearing
             ?: (if (navMode && navPuck.engaged) navPuck.displayBearing.takeIf { !it.isNaN() } else null)
+            ?: (if (routePolyline.size >= 2) bearingDeg(routePolyline[0], routePolyline[1]).toFloat() else null)
         // While the free-drive ticker owns the source, hand applyData the SMOOTHED beam so a
         // compass-driven recomposition can't repaint the raw (jittery) angle between frames.
         val meBearing = if (!navMode && driveFollowing && !browseBeam[0].isNaN()) browseBeam[0] else displayBearing
@@ -5601,8 +5604,8 @@ fun VelaMapView(
             }
         }
     } else if (puckOverlayOn.value) {
-        val puckKey = app.vela.ui.PuckStyle.key()
-        val puckImg = remember(puckKey) { navPuckBitmap().asImageBitmap() }
+        val puckKey = "${app.vela.ui.PuckStyle.key()}|stale=$locationStale"
+        val puckImg = remember(puckKey) { navPuckBitmap(isStale = locationStale).asImageBitmap() }
         val sizePx = puckImg.width
         androidx.compose.foundation.Image(
             bitmap = puckImg,
@@ -5739,6 +5742,7 @@ private fun ensureLayers(style: Style) {
 
     if (style.getImage(ME_ARROW_IMG) == null) style.addImage(ME_ARROW_IMG, arrowBitmap())
     if (style.getImage(NAV_PUCK_IMG) == null) style.addImage(NAV_PUCK_IMG, navPuckBitmap())
+    if (style.getImage(NAV_PUCK_STALE_IMG) == null) style.addImage(NAV_PUCK_STALE_IMG, navPuckBitmap(isStale = true))
 
     // Terrain relief — only over the OpenMapTiles basemap (the keyless path).
     if (basemapSrc(style) != null) ensureHillshade(style)
@@ -9514,9 +9518,16 @@ private fun applyData(
     poisEnabled: Boolean = true,
     svPose: DoubleArray? = null, // Street View pose [lat, lng, compassYawDeg]; null = viewer closed
 ) {
-    // Accuracy halo: shown only for a vague fix (see ACCURACY_HALO_MIN_M) and never during nav,
-    // where the puck snaps to the road anyway. Identity-gated like everything else here.
-    val wantAcc = if (!navMode && me != null && meAccuracyM != null && meAccuracyM > ACCURACY_HALO_MIN_M) meAccuracyM else null
+    // Accuracy halo: shown when fix is stale (weak signal) or imprecise. Identity-gated like everything else here.
+    val wantAcc = if (me != null && meAccuracyM != null) {
+        if (meStale) {
+            maxOf(meAccuracyM, 35f)
+        } else if (navMode) {
+            if (meAccuracyM > 40f) meAccuracyM else null
+        } else {
+            if (meAccuracyM > 25f) meAccuracyM else null
+        }
+    } else null
     if (me !== lastAccuracyLoc || wantAcc != lastAccuracyM) {
         val fc = if (wantAcc == null || me == null) FeatureCollection.fromFeatures(emptyList<Feature>())
         else FeatureCollection.fromFeature(Feature.fromGeometry(accuracyCircle(me, wantAcc.toDouble())))
@@ -10053,11 +10064,12 @@ private fun applyData(
     // hide the dot and swap the heading layer's icon to the arrow. BROWSE: the blue dot
     // (gray when the fix is stale) + a faint heading cone. The cone/puck both hide while
     // stale (old bearing).
-    val showPuck = navMode && me != null && bearing != null && !meStale
+    val showPuck = navMode && me != null
     // Key-gated (AUDIT FIX 3b): four JNI property sets per recomposition for values that only
     // change on a mode/staleness flip.
+    val arrowVis = if (navMode) (me != null && !puckOverlayOwnsArrow) else (me != null && bearing != null && !meStale)
     val meLayerKey = (if (navMode) 1 else 0) or (if (meStale) 2 else 0) or
-        (if (showPuck) 4 else 0) or (if (me != null && bearing != null) 8 else 0)
+        (if (showPuck) 4 else 0) or (if (arrowVis) 8 else 0) or (if (puckOverlayOwnsArrow) 16 else 0)
     if (meLayerKey != lastMeLayerKey) {
         lastMeLayerKey = meLayerKey
         style.getLayer(ME_LAYER)?.setProperties(
@@ -10065,8 +10077,8 @@ private fun applyData(
             PropertyFactory.visibility(if (showPuck) Property.NONE else Property.VISIBLE),
         )
         style.getLayer(ME_ARROW_LAYER)?.setProperties(
-            PropertyFactory.iconImage(if (navMode) NAV_PUCK_IMG else ME_ARROW_IMG),
-            PropertyFactory.visibility(if (me != null && bearing != null && !meStale && !puckOverlayOwnsArrow) Property.VISIBLE else Property.NONE),
+            PropertyFactory.iconImage(if (navMode) (if (meStale) NAV_PUCK_STALE_IMG else NAV_PUCK_IMG) else ME_ARROW_IMG),
+            PropertyFactory.visibility(if (arrowVis) Property.VISIBLE else Property.NONE),
         )
     }
 
@@ -10134,6 +10146,7 @@ private fun arrowBitmap(): Bitmap {
 internal fun navPuckBitmap(
     scale: Float = app.vela.ui.PuckStyle.scale(),
     whiteDisc: Boolean = app.vela.ui.PuckStyle.whiteDisc(),
+    isStale: Boolean = false,
 ): Bitmap {
     // 202 = +15% per issue #251 (2026-08-10); the earlier chain was 96 -> 112 -> 136 -> 176.
     // [scale] is the Settings "Arrow size" (issue #344): Large 1.25x, Extra large 1.5x.
@@ -10143,11 +10156,13 @@ internal fun navPuckBitmap(
     // Drawn in the original 176-space and scaled whole, so the disc/arrow/shadow proportions the
     // user tuned in July stay byte-identical - only the rendered size grows.
     canvas.scale(size / 176f, size / 176f)
-    when (app.vela.ui.PuckStyle.shape.value) {
-        app.vela.ui.PuckStyle.SHAPE_CAR -> { drawCarPuck(canvas, app.vela.ui.PuckStyle.carColor.value); return bmp }
-        app.vela.ui.PuckStyle.SHAPE_UFO -> { drawUfoPuck(canvas); return bmp }
-        app.vela.ui.PuckStyle.SHAPE_SHIP -> { drawShipPuck(canvas); return bmp }
-        app.vela.ui.PuckStyle.SHAPE_DUCK -> { drawDuckPuck(canvas); return bmp }
+    if (!isStale) {
+        when (app.vela.ui.PuckStyle.shape.value) {
+            app.vela.ui.PuckStyle.SHAPE_CAR -> { drawCarPuck(canvas, app.vela.ui.PuckStyle.carColor.value); return bmp }
+            app.vela.ui.PuckStyle.SHAPE_UFO -> { drawUfoPuck(canvas); return bmp }
+            app.vela.ui.PuckStyle.SHAPE_SHIP -> { drawShipPuck(canvas); return bmp }
+            app.vela.ui.PuckStyle.SHAPE_DUCK -> { drawDuckPuck(canvas); return bmp }
+        }
     }
     val cx = 88f
     val cy = 88f
@@ -10160,21 +10175,20 @@ internal fun navPuckBitmap(
             maskFilter = android.graphics.BlurMaskFilter(10f, android.graphics.BlurMaskFilter.Blur.NORMAL)
         },
     )
-    // The bright-navy disc - no white ring this time (user call). #1a46e5 = a vivid, deep blue.
-    // The "white disc" style (issue #344) inverts it: white disc, blue chevron, plus a hairline
-    // gray ring so the disc still has an edge over a light map.
     val blue = android.graphics.Color.parseColor("#1a46e5")
+    val staleGray = android.graphics.Color.parseColor("#80868B")
+    val discColor = if (isStale) staleGray else if (whiteDisc) android.graphics.Color.WHITE else blue
     canvas.drawCircle(
         cx, cy, r,
-        Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (whiteDisc) android.graphics.Color.WHITE else blue },
+        Paint(Paint.ANTI_ALIAS_FLAG).apply { color = discColor },
     )
-    if (whiteDisc) {
+    if (whiteDisc || isStale) {
         canvas.drawCircle(
             cx, cy, r - 1f,
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = android.graphics.Color.parseColor("#B9BDC2")
+                color = if (isStale) android.graphics.Color.WHITE else android.graphics.Color.parseColor("#B9BDC2")
                 style = Paint.Style.STROKE
-                strokeWidth = 2f
+                strokeWidth = if (isStale) 4f else 2f
             },
         )
     }
@@ -10186,10 +10200,11 @@ internal fun navPuckBitmap(
         lineTo(cx - 27f, cy + 26f)    // bottom-left
         close()
     }
+    val arrowColor = if (isStale) android.graphics.Color.WHITE else if (whiteDisc) blue else android.graphics.Color.WHITE
     canvas.drawPath(
         arrow,
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (whiteDisc) blue else android.graphics.Color.WHITE
+            color = arrowColor
             style = Paint.Style.FILL
         },
     )
