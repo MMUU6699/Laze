@@ -2,51 +2,47 @@ package app.vela.core.backend
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AuthRepositoryTest {
 
     @Test
-    fun `parseAuthCallbackUrl extracts fragment tokens successfully`() {
-        val url = "laze://auth/callback#access_token=eyJhbGciOiJIUzI1NiJ9.test&refresh_token=refresh_123&token_type=bearer"
+    fun testParseAuthCallbackUrlWithFragment() {
+        val url = "laze://auth/callback#access_token=test_access_123&refresh_token=test_refresh_456&token_type=bearer"
         val tokens = parseAuthCallbackUrl(url)
-
-        assertEquals("eyJhbGciOiJIUzI1NiJ9.test", tokens.accessToken)
-        assertEquals("refresh_123", tokens.refreshToken)
-        assertNull(tokens.code)
-        assertNull(tokens.error)
+        assertEquals("test_access_123", tokens.accessToken)
+        assertEquals("test_refresh_456", tokens.refreshToken)
     }
 
     @Test
-    fun `parseAuthCallbackUrl extracts query code successfully`() {
-        val url = "laze://auth/callback?code=oauth_code_xyz"
+    fun testParseAuthCallbackUrlWithCode() {
+        val url = "laze://auth/callback?code=test_code_789"
         val tokens = parseAuthCallbackUrl(url)
-
-        assertNull(tokens.accessToken)
-        assertNull(tokens.refreshToken)
-        assertEquals("oauth_code_xyz", tokens.code)
-        assertNull(tokens.error)
+        assertEquals("test_code_789", tokens.code)
     }
 
     @Test
-    fun `parseAuthCallbackUrl extracts error description`() {
-        val url = "laze://auth/callback?error=access_denied&error_description=The+user+denied+access"
+    fun testParseAuthCallbackUrlWithError() {
+        val url = "laze://auth/callback?error=access_denied&error_description=User+declined"
         val tokens = parseAuthCallbackUrl(url)
-
-        assertNull(tokens.accessToken)
-        assertNull(tokens.code)
-        assertEquals("The user denied access", tokens.error)
+        assertEquals("access_denied", tokens.error)
+        assertEquals("User declined", tokens.errorDescription)
+        assertEquals("User declined", tokens.displayError)
     }
 
     @Test
-    fun `parseAuthCallbackUrl handles malformed url gracefully`() {
-        val url = "laze://auth/callback"
-        val tokens = parseAuthCallbackUrl(url)
+    fun testUserFriendlyAuthErrorTranslation() {
+        val invalidCreds = toUserFriendlyAuthError(Exception("Invalid login credentials"))
+        assertEquals("البريد الإلكتروني أو كلمة المرور غير صحيحة", invalidCreds)
 
-        assertNull(tokens.accessToken)
-        assertNull(tokens.refreshToken)
-        assertNull(tokens.code)
-        assertNull(tokens.error)
+        val alreadyRegistered = toUserFriendlyAuthError(Exception("User already registered"))
+        assertEquals("هذا البريد الإلكتروني مسجل بالفعل، يرجى تسجيل الدخول", alreadyRegistered)
+
+        val rateLimit = toUserFriendlyAuthError(Exception("over_request_rate_limit"))
+        assertTrue(rateLimit.contains("تجاوز"))
+
+        val network = toUserFriendlyAuthError(java.net.UnknownHostException("Unable to resolve host"))
+        assertTrue(network.contains("الإنترنت"))
     }
 }

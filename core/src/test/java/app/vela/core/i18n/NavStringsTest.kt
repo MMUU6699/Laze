@@ -204,11 +204,16 @@ class NavStringsTest {
 
     @Test fun `arabic navigation phrases and distances render accurately`() {
         val ar = ArNavStrings
-        assertEquals("انعطف يمينًا نحو شارع الرشيد", ar.phrase("turn", "right", "شارع الرشيد", null, null, null))
-        assertEquals("انعطف يسارًا نحو شارع فلسطين", ar.phrase("turn", "left", "شارع فلسطين", null, null, null))
-        assertEquals("قم بالدوران للخلف نحو طريق المطار", ar.phrase("uturn", "uturn", "طريق المطار", null, null, null))
+        val rRashid = app.vela.core.util.BidiHelper.wrapRoadName("شارع الرشيد")
+        val rPalestine = app.vela.core.util.BidiHelper.wrapRoadName("شارع فلسطين")
+        val rAirport = app.vela.core.util.BidiHelper.wrapRoadName("طريق المطار")
+        val rDamascus = app.vela.core.util.BidiHelper.wrapRoadName("شارع دمشق")
+
+        assertEquals("انعطف يمينًا نحو $rRashid", ar.phrase("turn", "right", "شارع الرشيد", null, null, null))
+        assertEquals("انعطف يسارًا نحو $rPalestine", ar.phrase("turn", "left", "شارع فلسطين", null, null, null))
+        assertEquals("قم بالدوران للخلف نحو $rAirport", ar.phrase("uturn", "uturn", "طريق المطار", null, null, null))
         assertEquals("وصلت إلى وجهتك", ar.phrase("arrive", null, null, null, null, null))
-        assertEquals("ادخل الدوار واسلك المخرج الثاني نحو شارع دمشق", ar.phrase("roundabout", null, "شارع دمشق", null, null, 2))
+        assertEquals("ادخل الدوار واسلك المخرج الثاني نحو $rDamascus", ar.phrase("roundabout", null, "شارع دمشق", null, null, 2))
 
         // Spoken distance
         assertEquals("500 متر", ar.spokenDistance(500.0, imperial = false))

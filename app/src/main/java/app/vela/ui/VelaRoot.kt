@@ -53,6 +53,10 @@ fun VelaRoot(vm: MapViewModel = hiltViewModel()) {
             val errorMsg = (state as? app.vela.core.backend.AuthState.Error)?.message
             app.vela.ui.profile.LoginScreen(
                 onGoogleSignIn = { vm.signInWithGoogle(context) },
+                onEmailSignIn = { email, password, onRes -> vm.signInWithEmail(email, password, onRes) },
+                onEmailSignUp = { email, password, name, onRes -> vm.signUpWithEmail(email, password, name, onRes) },
+                onForgotPassword = { email, onRes -> vm.sendPasswordResetEmail(email, onRes) },
+                onResendVerification = { email, onRes -> vm.resendVerificationEmail(email, onRes) },
                 errorMessage = errorMsg,
             )
             return

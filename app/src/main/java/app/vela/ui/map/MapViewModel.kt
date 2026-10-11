@@ -1427,6 +1427,73 @@ class MapViewModel @Inject constructor(
         context.startActivity(browserIntent)
     }
 
+    fun signUpWithEmail(
+        email: String,
+        password: String,
+        fullName: String,
+        onResult: (Result<app.vela.core.backend.SignUpOutcome>) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val res = authRepository.signUpWithEmail(email, password, fullName)
+            if (res.isSuccess) {
+                when (res.getOrNull()) {
+                    is app.vela.core.backend.SignUpOutcome.SuccessLoggedIn -> {
+                        flashStatus(appContext.getString(R.string.auth_success), 3000L)
+                    }
+                    else -> Unit
+                }
+            }
+            onResult(res)
+        }
+    }
+
+    fun signInWithEmail(
+        email: String,
+        password: String,
+        onResult: (Result<app.vela.core.backend.UserProfile>) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val res = authRepository.signInWithEmail(email, password)
+            if (res.isSuccess) {
+                flashStatus(appContext.getString(R.string.auth_success), 3000L)
+            }
+            onResult(res)
+        }
+    }
+
+    fun sendPasswordResetEmail(
+        email: String,
+        onResult: (Result<Unit>) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val res = authRepository.sendPasswordResetEmail(email)
+            onResult(res)
+        }
+    }
+
+    fun resendVerificationEmail(
+        email: String,
+        onResult: (Result<Unit>) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val res = authRepository.resendVerificationEmail(email)
+            onResult(res)
+        }
+    }
+
+    fun updatePassword(
+        newPassword: String,
+        onResult: (Result<Unit>) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val res = authRepository.updatePassword(newPassword)
+            if (res.isSuccess) {
+                flashStatus(appContext.getString(R.string.auth_password_updated), 3000L)
+            }
+            onResult(res)
+        }
+    }
+
     fun signOut() {
         viewModelScope.launch {
             authRepository.signOut()

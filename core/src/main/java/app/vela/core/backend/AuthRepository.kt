@@ -2,7 +2,9 @@ package app.vela.core.backend
 
 import android.content.Context
 import android.net.Uri
+import io.github.jan.supabase.auth.OtpType
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
@@ -14,8 +16,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 sealed class AuthState {
     data object Loading : AuthState()
@@ -24,18 +28,28 @@ sealed class AuthState {
     data class Error(val message: String) : AuthState()
 }
 
+sealed class SignUpOutcome {
+    data class SuccessLoggedIn(val profile: UserProfile) : SignUpOutcome()
+    data class NeedsEmailConfirmation(val email: String) : SignUpOutcome()
+}
+
 internal data class AuthCallbackTokens(
     val accessToken: String? = null,
     val refreshToken: String? = null,
     val code: String? = null,
-    val error: String? = null
-)
+    val error: String? = null,
+    val errorDescription: String? = null
+) {
+    val displayError: String?
+        get() = errorDescription ?: error
+}
 
 internal fun parseAuthCallbackUrl(url: String): AuthCallbackTokens {
     var accessToken: String? = null
     var refreshToken: String? = null
     var code: String? = null
     var error: String? = null
+    var errorDescription: String? = null
 
     val fragmentIndex = url.indexOf('#')
     if (fragmentIndex >= 0 && fragmentIndex < url.length - 1) {
@@ -54,7 +68,7 @@ internal fun parseAuthCallbackUrl(url: String): AuthCallbackTokens {
                     "access_token" -> accessToken = value
                     "refresh_token" -> refreshToken = value
                     "error" -> error = value
-                    "error_description" -> error = value
+                    "error_description" -> errorDescription = value
                 }
             }
         }
@@ -79,13 +93,13 @@ internal fun parseAuthCallbackUrl(url: String): AuthCallbackTokens {
                     "refresh_token" -> if (refreshToken == null) refreshToken = value
                     "code" -> if (code == null) code = value
                     "error" -> if (error == null) error = value
-                    "error_description" -> error = value
+                    "error_description" -> if (errorDescription == null) errorDescription = value
                 }
             }
         }
     }
 
-    return AuthCallbackTokens(accessToken, refreshToken, code, error)
+    return AuthCallbackTokens(accessToken, refreshToken, code, error, errorDescription)
 }
 
 /**
@@ -345,5 +359,144 @@ class AuthRepository(private val context: Context) {
         val updated = current.copy(reportsSubmitted = current.reportsSubmitted + 1)
         prefs.edit().putInt(KEY_SAVED_REPORTS, updated.reportsSubmitted).apply()
         _authState.value = AuthState.Authenticated(updated)
+    }
+
+    /**
+     * Signs up a new user with Email and Password using Supabase Auth.
+     */
+    suspend fun signUpWithEmail(
+        email: String,
+        password: String,
+        fullName: String
+    ): Result<SignUpOutcome> = withContext(Dispatchers.IO) {
+        val client = SupabaseManager.getClient()
+            ?: return@withContext Result.failure(IllegalStateException("خدمة المصادقة غير مهيأة"))
+        try {
+            _authState.value = AuthState.Loading
+            client.auth.signUpWith(Email) {
+                this.email = email.trim()
+                this.password = password
+                this.data = buildJsonObject {
+                    put("full_name", fullName.trim())
+                }
+            }
+            val user = client.auth.currentUserOrNull()
+            if (user != null && client.auth.currentSessionOrNull() != null) {
+                fetchOrCreateProfile(user.id, user.email, user.userMetadata)
+                val profile = getCurrentProfile() ?: UserProfile(user.id, user.email, fullName, null, 0)
+                Result.success(SignUpOutcome.SuccessLoggedIn(profile))
+            } else {
+                _authState.value = AuthState.Unauthenticated
+                Result.success(SignUpOutcome.NeedsEmailConfirmation(email.trim()))
+            }
+        } catch (e: Exception) {
+            val friendlyMsg = toUserFriendlyAuthError(e)
+            _authState.value = AuthState.Error(friendlyMsg)
+            Result.failure(Exception(friendlyMsg, e))
+        }
+    }
+
+    /**
+     * Signs in an existing user with Email and Password using Supabase Auth.
+     */
+    suspend fun signInWithEmail(
+        email: String,
+        password: String
+    ): Result<UserProfile> = withContext(Dispatchers.IO) {
+        val client = SupabaseManager.getClient()
+            ?: return@withContext Result.failure(IllegalStateException("خدمة المصادقة غير مهيأة"))
+        try {
+            _authState.value = AuthState.Loading
+            client.auth.signInWith(Email) {
+                this.email = email.trim()
+                this.password = password
+            }
+            val user = client.auth.currentUserOrNull()
+            if (user != null) {
+                fetchOrCreateProfile(user.id, user.email, user.userMetadata)
+                val profile = getCurrentProfile() ?: UserProfile(user.id, user.email, email.substringBefore('@'), null, 0)
+                Result.success(profile)
+            } else {
+                val msg = "البريد الإلكتروني أو كلمة المرور غير صحيحة"
+                _authState.value = AuthState.Error(msg)
+                Result.failure(Exception(msg))
+            }
+        } catch (e: Exception) {
+            val friendlyMsg = toUserFriendlyAuthError(e)
+            _authState.value = AuthState.Error(friendlyMsg)
+            Result.failure(Exception(friendlyMsg, e))
+        }
+    }
+
+    /**
+     * Sends a password reset recovery email to the given email address.
+     */
+    suspend fun sendPasswordResetEmail(email: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val client = SupabaseManager.getClient()
+            ?: return@withContext Result.failure(IllegalStateException("خدمة المصادقة غير مهيأة"))
+        try {
+            client.auth.resetPasswordForEmail(
+                email = email.trim(),
+                redirectUrl = REDIRECT_URI
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            val friendlyMsg = toUserFriendlyAuthError(e)
+            Result.failure(Exception(friendlyMsg, e))
+        }
+    }
+
+    /**
+     * Resends confirmation email for newly registered user.
+     */
+    suspend fun resendVerificationEmail(email: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val client = SupabaseManager.getClient()
+            ?: return@withContext Result.failure(IllegalStateException("خدمة المصادقة غير مهيأة"))
+        try {
+            client.auth.resendEmail(
+                type = OtpType.Email.SIGNUP,
+                email = email.trim()
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            val friendlyMsg = toUserFriendlyAuthError(e)
+            Result.failure(Exception(friendlyMsg, e))
+        }
+    }
+
+    /**
+     * Updates user password (e.g. following password reset recovery).
+     */
+    suspend fun updatePassword(newPassword: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val client = SupabaseManager.getClient()
+            ?: return@withContext Result.failure(IllegalStateException("خدمة المصادقة غير مهيأة"))
+        try {
+            client.auth.updateUser {
+                password = newPassword
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            val friendlyMsg = toUserFriendlyAuthError(e)
+            Result.failure(Exception(friendlyMsg, e))
+        }
+    }
+}
+
+fun toUserFriendlyAuthError(throwable: Throwable): String {
+    val msg = throwable.message?.lowercase().orEmpty()
+    return when {
+        msg.contains("invalid login credentials") || msg.contains("invalid_credentials") ->
+            "البريد الإلكتروني أو كلمة المرور غير صحيحة"
+        msg.contains("user already registered") || msg.contains("already registered") ->
+            "هذا البريد الإلكتروني مسجل بالفعل، يرجى تسجيل الدخول"
+        msg.contains("email not confirmed") ->
+            "يرجى تأكيد بريدك الإلكتروني عبر الرابط المرسل إليك قبل تسجيل الدخول"
+        msg.contains("rate limit") || msg.contains("over_request_rate_limit") || msg.contains("too many requests") ->
+            "تم تجاوز عدد المحاولات المسموح بها، يرجى الانتظار قليلاً والمحاولة مرة أخرى"
+        msg.contains("password should be at least") || msg.contains("weak_password") ->
+            "كلمة المرور يجب ألا تقل عن 8 أحرف"
+        msg.contains("unable to resolve host") || msg.contains("connectexception") || msg.contains("sockettimeoutexception") || msg.contains("network") ->
+            "تعذر الاتصال بالخادم، يرجى التحقق من اتصالك بالإنترنت"
+        else -> throwable.localizedMessage ?: "حدث خطأ غير متوقع أثناء تسجيل الدخول"
     }
 }
